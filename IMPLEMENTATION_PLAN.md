@@ -48,9 +48,9 @@
 - [x] 3.2 Implement `JSFunctionBytecode` struct
 - [x] 3.3 Implement value stack
 - [x] 3.4 Implement bytecode interpreter loop
-- [ ] 3.5 Implement function call mechanism
+- [x] 3.5 Implement function call mechanism
 
-**Status**: In Progress
+**Status**: Complete
 
 ---
 
@@ -159,6 +159,6 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 84 passing
+**Test Count**: 88 passing
 
-**Next Action**: Continue Stage 3 (function call mechanism)
+**Next Action**: Begin Stage 4 (Parser & Compiler)

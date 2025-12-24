@@ -123,24 +123,47 @@ impl Interpreter {
     /// # Safety
     /// The bytecode pointer must be valid for the duration of execution.
     pub fn execute(&mut self, bytecode: &FunctionBytecode) -> InterpreterResult<Value> {
-        // Set up initial frame
+        self.call_function(bytecode, Value::undefined(), &[])
+    }
+
+    /// Call a function with the given `this` value and arguments
+    pub fn call_function(
+        &mut self,
+        bytecode: &FunctionBytecode,
+        this_val: Value,
+        args: &[Value],
+    ) -> InterpreterResult<Value> {
+        // Check recursion limit
+        if self.call_stack.len() >= self.max_recursion {
+            return Err(InterpreterError::InternalError(
+                "maximum call stack size exceeded".to_string(),
+            ));
+        }
+
         let frame_ptr = self.stack.len();
 
-        // Allocate space for locals
-        for _ in 0..bytecode.local_count {
+        // Push arguments (pad with undefined if needed)
+        for i in 0..bytecode.arg_count as usize {
+            let arg = args.get(i).copied().unwrap_or(Value::undefined());
+            self.stack.push(arg);
+        }
+
+        // Allocate space for locals (beyond arguments)
+        let extra_locals = bytecode.local_count.saturating_sub(bytecode.arg_count);
+        for _ in 0..extra_locals {
             self.stack.push(Value::undefined());
         }
 
-        let frame = CallFrame::new(bytecode as *const _, frame_ptr, 0, Value::undefined());
+        let frame = CallFrame::new(
+            bytecode as *const _,
+            frame_ptr,
+            args.len().min(u16::MAX as usize) as u16,
+            this_val,
+        );
         self.call_stack.push(frame);
 
         // Run the interpreter loop
-        let result = self.run();
-
-        // Clean up
-        self.call_stack.pop();
-
-        result
+        self.run()
     }
 
     /// Main interpreter loop
@@ -402,6 +425,104 @@ impl Interpreter {
                     self.stack.set_local_at(frame_ptr, idx, val);
                 }
 
+                // Get argument (16-bit index)
+                op if op == OpCode::GetArg as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+                    let frame_ptr = frame.frame_ptr;
+                    // Arguments are at the start of the frame
+                    let val = self
+                        .stack
+                        .get_local_at(frame_ptr, idx)
+                        .unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+
+                // Set argument (16-bit index)
+                op if op == OpCode::PutArg as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+                    let frame_ptr = frame.frame_ptr;
+                    self.stack.set_local_at(frame_ptr, idx, val);
+                }
+
+                // Get argument 0-3 (optimized)
+                op if op == OpCode::GetArg0 as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    let val = self
+                        .stack
+                        .get_local_at(frame_ptr, 0)
+                        .unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+                op if op == OpCode::GetArg1 as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    let val = self
+                        .stack
+                        .get_local_at(frame_ptr, 1)
+                        .unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+                op if op == OpCode::GetArg2 as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    let val = self
+                        .stack
+                        .get_local_at(frame_ptr, 2)
+                        .unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+                op if op == OpCode::GetArg3 as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    let val = self
+                        .stack
+                        .get_local_at(frame_ptr, 3)
+                        .unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+
+                // Set argument 0-3 (optimized)
+                op if op == OpCode::PutArg0 as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    self.stack.set_local_at(frame_ptr, 0, val);
+                }
+                op if op == OpCode::PutArg1 as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    self.stack.set_local_at(frame_ptr, 1, val);
+                }
+                op if op == OpCode::PutArg2 as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    self.stack.set_local_at(frame_ptr, 2, val);
+                }
+                op if op == OpCode::PutArg3 as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last().unwrap();
+                    let frame_ptr = frame.frame_ptr;
+                    self.stack.set_local_at(frame_ptr, 3, val);
+                }
+
+                // Push this value
+                op if op == OpCode::PushThis as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    self.stack.push(frame.this_val);
+                }
+
                 // Arithmetic: Negate
                 op if op == OpCode::Neg as u8 => {
                     let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
@@ -645,12 +766,27 @@ impl Interpreter {
                 // Return
                 op if op == OpCode::Return as u8 => {
                     let result = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    return Ok(result);
+                    return self.do_return(result);
                 }
 
                 // Return undefined
                 op if op == OpCode::ReturnUndef as u8 => {
-                    return Ok(Value::undefined());
+                    return self.do_return(Value::undefined());
+                }
+
+                // Function call (16-bit argc)
+                op if op == OpCode::Call as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let argc = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]);
+                    frame.pc += 2;
+
+                    // For now, just return an error - full implementation requires
+                    // looking up the function and setting up a new frame
+                    return Err(InterpreterError::InternalError(
+                        format!("function calls not yet fully implemented (argc={})", argc),
+                    ));
                 }
 
                 // Nop
@@ -664,6 +800,32 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    /// Handle return from a function
+    ///
+    /// If this is a nested call, pops the frame and continues execution.
+    /// If this is the top-level call, returns the result.
+    fn do_return(&mut self, result: Value) -> InterpreterResult<Value> {
+        // Pop the current frame
+        let frame = self.call_stack.pop().ok_or_else(|| {
+            InterpreterError::InternalError("no call frame to return from".to_string())
+        })?;
+
+        // Clean up locals from the stack
+        let local_count = unsafe { (*frame.bytecode).local_count } as usize;
+        self.stack.drop_n(local_count);
+
+        // If there are no more frames, this is the final result
+        if self.call_stack.is_empty() {
+            return Ok(result);
+        }
+
+        // Otherwise, push the result for the caller and continue
+        self.stack.push(result);
+
+        // Continue running the caller
+        self.run()
     }
 
     // Helper: Convert value to boolean (static method to avoid borrow issues)
@@ -1090,5 +1252,76 @@ mod tests {
 
         let result = interp.execute(&bc).unwrap();
         assert!(result.to_bool().unwrap());
+    }
+
+    #[test]
+    fn test_function_with_args() {
+        let mut interp = Interpreter::new();
+
+        // function add(a, b) { return a + b; }
+        // Called with args [10, 20]
+        let mut fb = FunctionBytecode::new(2, 2); // 2 args, 2 locals (args are locals)
+        fb.bytecode = vec![
+            OpCode::GetArg0 as u8,
+            OpCode::GetArg1 as u8,
+            OpCode::Add as u8,
+            OpCode::Return as u8,
+        ];
+
+        let result = interp
+            .call_function(&fb, Value::undefined(), &[Value::int(10), Value::int(20)])
+            .unwrap();
+        assert_eq!(result.to_i32(), Some(30));
+    }
+
+    #[test]
+    fn test_function_with_this() {
+        let mut interp = Interpreter::new();
+
+        // function getThis() { return this; }
+        let mut fb = FunctionBytecode::new(0, 0);
+        fb.bytecode = vec![OpCode::PushThis as u8, OpCode::Return as u8];
+
+        let this_val = Value::int(42);
+        let result = interp.call_function(&fb, this_val, &[]).unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_function_missing_args() {
+        let mut interp = Interpreter::new();
+
+        // function add(a, b) { return a + b; }
+        // Called with only 1 arg - b should be undefined
+        let mut fb = FunctionBytecode::new(2, 2);
+        fb.bytecode = vec![
+            OpCode::GetArg1 as u8, // Get b (should be undefined)
+            OpCode::Return as u8,
+        ];
+
+        let result = interp
+            .call_function(&fb, Value::undefined(), &[Value::int(10)])
+            .unwrap();
+        assert!(result.is_undefined());
+    }
+
+    #[test]
+    fn test_recursion_limit() {
+        let mut interp = Interpreter::with_config(1024, 5); // Max 5 calls deep
+
+        // Fill up call stack
+        let fb = FunctionBytecode::new(0, 0);
+        for _ in 0..5 {
+            interp.call_stack.push(CallFrame::new(
+                &fb as *const _,
+                0,
+                0,
+                Value::undefined(),
+            ));
+        }
+
+        // Next call should fail
+        let result = interp.call_function(&fb, Value::undefined(), &[]);
+        assert!(result.is_err());
     }
 }
