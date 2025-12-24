@@ -1589,6 +1589,145 @@ impl Interpreter {
                     self.stack.push(val);
                 }
 
+                // In operator: prop in obj -> bool
+                op if op == OpCode::In as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let prop = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    let result = if let Some(obj_idx) = obj.to_object_idx() {
+                        // Check if property exists in object
+                        // Convert prop to string, checking bytecode string constants
+                        let prop_name = if prop.is_string() {
+                            if let Some(str_idx) = prop.to_string_idx() {
+                                // Check built-in strings first
+                                use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING, STR_EMPTY};
+                                match str_idx {
+                                    STR_UNDEFINED => Some("undefined".to_string()),
+                                    STR_OBJECT => Some("object".to_string()),
+                                    STR_BOOLEAN => Some("boolean".to_string()),
+                                    STR_NUMBER => Some("number".to_string()),
+                                    STR_FUNCTION => Some("function".to_string()),
+                                    STR_STRING => Some("string".to_string()),
+                                    STR_EMPTY => Some(String::new()),
+                                    _ => {
+                                        if str_idx >= 0x8000 {
+                                            self.runtime_strings.get((str_idx - 0x8000) as usize).cloned()
+                                        } else {
+                                            // Compile-time string constant
+                                            bytecode.string_constants.get(str_idx as usize).cloned()
+                                        }
+                                    }
+                                }
+                            } else {
+                                None
+                            }
+                        } else if let Some(n) = prop.to_i32() {
+                            Some(n.to_string())
+                        } else {
+                            None
+                        };
+
+                        if let Some(name) = prop_name {
+                            let obj_props = self.get_object(obj_idx);
+                            let exists = obj_props
+                                .map(|props| props.iter().any(|(k, _)| k == &name))
+                                .unwrap_or(false);
+                            Value::bool(exists)
+                        } else {
+                            Value::bool(false)
+                        }
+                    } else if let Some(arr_idx) = obj.to_array_idx() {
+                        // Check if index exists in array
+                        if let Some(idx) = prop.to_i32() {
+                            let arr = self.get_array(arr_idx);
+                            let exists = arr
+                                .map(|a| idx >= 0 && (idx as usize) < a.len())
+                                .unwrap_or(false);
+                            Value::bool(exists)
+                        } else {
+                            Value::bool(false)
+                        }
+                    } else {
+                        Value::bool(false)
+                    };
+                    self.stack.push(result);
+                }
+
+                // Delete operator: obj prop -> bool
+                op if op == OpCode::Delete as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+
+                    let prop = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    let result = if let Some(obj_idx) = obj.to_object_idx() {
+                        // Convert prop to string, checking bytecode string constants
+                        let prop_name = if prop.is_string() {
+                            if let Some(str_idx) = prop.to_string_idx() {
+                                use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING, STR_EMPTY};
+                                match str_idx {
+                                    STR_UNDEFINED => Some("undefined".to_string()),
+                                    STR_OBJECT => Some("object".to_string()),
+                                    STR_BOOLEAN => Some("boolean".to_string()),
+                                    STR_NUMBER => Some("number".to_string()),
+                                    STR_FUNCTION => Some("function".to_string()),
+                                    STR_STRING => Some("string".to_string()),
+                                    STR_EMPTY => Some(String::new()),
+                                    _ => {
+                                        if str_idx >= 0x8000 {
+                                            self.runtime_strings.get((str_idx - 0x8000) as usize).cloned()
+                                        } else {
+                                            bytecode.string_constants.get(str_idx as usize).cloned()
+                                        }
+                                    }
+                                }
+                            } else {
+                                None
+                            }
+                        } else if let Some(n) = prop.to_i32() {
+                            Some(n.to_string())
+                        } else {
+                            None
+                        };
+
+                        // Delete property from object
+                        if let Some(name) = prop_name {
+                            if let Some(obj_props) = self.get_object_mut(obj_idx) {
+                                let orig_len = obj_props.len();
+                                obj_props.retain(|(k, _)| k != &name);
+                                Value::bool(obj_props.len() < orig_len)
+                            } else {
+                                Value::bool(false)
+                            }
+                        } else {
+                            Value::bool(false)
+                        }
+                    } else if let Some(arr_idx) = obj.to_array_idx() {
+                        // For arrays, set element to undefined (don't actually remove)
+                        if let Some(idx) = prop.to_i32() {
+                            if let Some(arr) = self.get_array_mut(arr_idx) {
+                                if idx >= 0 && (idx as usize) < arr.len() {
+                                    arr[idx as usize] = Value::undefined();
+                                    Value::bool(true)
+                                } else {
+                                    Value::bool(true) // Deleting non-existent index returns true
+                                }
+                            } else {
+                                Value::bool(false)
+                            }
+                        } else {
+                            Value::bool(false)
+                        }
+                    } else {
+                        Value::bool(true) // delete on non-object returns true
+                    };
+                    self.stack.push(result);
+                }
+
                 // Unknown opcode
                 op => {
                     return Err(InterpreterError::InvalidOpcode(op));
@@ -1634,6 +1773,39 @@ impl Interpreter {
         } else {
             // Objects are truthy
             true
+        }
+    }
+
+    /// Convert a value to a string for property access
+    fn value_to_string(&self, val: &Value) -> Option<String> {
+        if val.is_string() {
+            // Get string from string constants or runtime strings
+            let str_idx = val.to_string_idx()?;
+            // Check if it's a built-in string
+            use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING, STR_EMPTY};
+            match str_idx {
+                STR_UNDEFINED => Some("undefined".to_string()),
+                STR_OBJECT => Some("object".to_string()),
+                STR_BOOLEAN => Some("boolean".to_string()),
+                STR_NUMBER => Some("number".to_string()),
+                STR_FUNCTION => Some("function".to_string()),
+                STR_STRING => Some("string".to_string()),
+                STR_EMPTY => Some(String::new()),
+                _ => {
+                    // Check runtime strings first (high indices)
+                    if str_idx >= 0x8000 {
+                        self.runtime_strings.get((str_idx - 0x8000) as usize).cloned()
+                    } else {
+                        // It's a compile-time string - we need bytecode access
+                        // For now, return None (caller should handle)
+                        None
+                    }
+                }
+            }
+        } else if let Some(n) = val.to_i32() {
+            Some(n.to_string())
+        } else {
+            None
         }
     }
 

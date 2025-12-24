@@ -1406,6 +1406,14 @@ impl<'a> Compiler<'a> {
                 self.emit_op(OpCode::TypeOf);
             }
 
+            // Delete operator: delete obj.prop or delete arr[idx]
+            Token::Delete => {
+                self.advance();
+                // Parse the operand - we need to handle member access specially
+                // to get both the object and the property key
+                self.delete_expr()?;
+            }
+
             // Pre-increment/decrement
             Token::PlusPlus => {
                 self.advance();
@@ -1628,6 +1636,76 @@ impl<'a> Compiler<'a> {
                     self.emit_op(OpCode::GetArrayEl);
                 }
                 _ => break,
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse the operand of a delete expression
+    /// Handles: delete obj.prop, delete arr[idx], delete variable
+    fn delete_expr(&mut self) -> Result<(), CompileError> {
+        // Parse the base expression (identifier or grouped expression)
+        match &self.current_token {
+            Token::Ident(name) => {
+                let name = name.clone();
+                self.advance();
+
+                // Resolve the variable
+                if let Some(idx) = self.resolve_local(&name) {
+                    self.emit_get_local(idx);
+                } else if let Some(idx) = self.resolve_capture(&name) {
+                    self.emit_get_capture(idx);
+                } else {
+                    return Err(CompileError::SyntaxError(format!(
+                        "Undefined variable '{}'",
+                        name
+                    )));
+                }
+            }
+            Token::LParen => {
+                self.advance();
+                self.expression()?;
+                self.expect(Token::RParen)?;
+            }
+            _ => {
+                return Err(CompileError::SyntaxError(format!(
+                    "Expected expression after delete, got {:?}",
+                    self.current_token
+                )));
+            }
+        }
+
+        // Now handle the property access (must have . or [])
+        match &self.current_token {
+            Token::Dot => {
+                self.advance();
+                if let Token::Ident(name) = &self.current_token {
+                    let name = name.clone();
+                    self.advance();
+                    // Push property name as string constant
+                    let str_idx = self.string_constants.len() as u16;
+                    self.string_constants.push(name);
+                    self.emit_op(OpCode::PushConst);
+                    let const_idx = self.add_constant(Value::string(str_idx));
+                    self.emit_u16(const_idx);
+                    self.emit_op(OpCode::Delete);
+                } else {
+                    return Err(CompileError::SyntaxError(
+                        "Expected property name after .".into(),
+                    ));
+                }
+            }
+            Token::LBracket => {
+                self.advance();
+                self.expression()?;
+                self.expect(Token::RBracket)?;
+                self.emit_op(OpCode::Delete);
+            }
+            _ => {
+                // delete on a simple variable - push undefined as key
+                // This is non-standard but we'll return true
+                self.emit_op(OpCode::Undefined);
+                self.emit_op(OpCode::Delete);
             }
         }
         Ok(())

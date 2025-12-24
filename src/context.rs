@@ -1214,4 +1214,129 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    // =========================================================================
+    // In and Delete operator tests
+    // =========================================================================
+
+    #[test]
+    fn test_in_operator_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check if index exists in array
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            if (1 in arr) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_in_operator_array_out_of_bounds() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check if out-of-bounds index returns false
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            if (5 in arr) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_in_operator_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check if property exists in object
+        let result = ctx.eval("
+            function Obj() {
+                this.x = 1;
+                this.y = 2;
+                return this;
+            }
+            var o = new Obj();
+            if ('x' in o) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_in_operator_object_missing() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check that missing property returns false
+        let result = ctx.eval("
+            function Obj() {
+                this.x = 1;
+                return this;
+            }
+            var o = new Obj();
+            if ('z' in o) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_delete_array_element() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Delete array element sets it to undefined
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            delete arr[1];
+            if (arr[1]) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0)); // arr[1] is now undefined (falsy)
+    }
+
+    #[test]
+    fn test_delete_object_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Delete object property
+        let result = ctx.eval("
+            function Obj() {
+                this.x = 1;
+                this.y = 2;
+                return this;
+            }
+            var o = new Obj();
+            delete o.x;
+            if ('x' in o) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0)); // x is deleted
+    }
+
+    #[test]
+    fn test_delete_returns_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Delete returns true on success
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            if (delete arr[1]) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }
