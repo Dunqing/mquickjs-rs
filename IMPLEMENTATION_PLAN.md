@@ -62,9 +62,9 @@
 - [x] 4.3 Implement expression parsing
 - [x] 4.4 Implement statement parsing
 - [x] 4.5 Implement bytecode generation
-- [ ] 4.6 Implement scope and variable resolution (partial - closures pending)
+- [x] 4.6 Implement scope and variable resolution (local variables)
 
-**Status**: Mostly Complete
+**Status**: Complete (closures pending for Stage 7)
 
 ---
 
@@ -159,7 +159,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 103 passing
+**Test Count**: 115 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -172,5 +172,6 @@
 - Local variable tracking with scope depth
 - Optimized integer emission (Push0-7, PushI8, PushI16)
 - Jump patching for control flow
+- Context.eval() for end-to-end JavaScript execution
 
-**Next Action**: Integrate compiler with interpreter, or begin Stage 5 (Core Builtins)
+**Next Action**: Begin Stage 5 (Core Builtins) or add more language features
