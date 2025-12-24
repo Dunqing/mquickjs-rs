@@ -30,6 +30,8 @@ pub const BUILTIN_SYNTAX_ERROR: u32 = 8;
 pub const BUILTIN_RANGE_ERROR: u32 = 9;
 /// Date object index
 pub const BUILTIN_DATE: u32 = 10;
+/// String object index
+pub const BUILTIN_STRING: u32 = 11;
 
 /// Native function signature
 ///
@@ -1408,6 +1410,13 @@ impl Interpreter {
                         continue;
                     }
 
+                    // Check if this is a builtin object called as a function
+                    if let Some(builtin_idx) = func_val.to_builtin_object_idx() {
+                        let result = self.call_builtin_as_function(builtin_idx, &args)?;
+                        self.stack.push(result);
+                        continue;
+                    }
+
                     // Determine if this is a closure or a regular function
                     let (callee_bytecode, callee_closure_idx): (&FunctionBytecode, Option<usize>) =
                         if let Some(closure_idx) = func_val.to_closure_idx() {
@@ -1814,6 +1823,7 @@ impl Interpreter {
                         "JSON" => Some(Value::builtin_object(BUILTIN_JSON)),
                         "Number" => Some(Value::builtin_object(BUILTIN_NUMBER)),
                         "Boolean" => Some(Value::builtin_object(BUILTIN_BOOLEAN)),
+                        "String" => Some(Value::builtin_object(BUILTIN_STRING)),
                         "console" => Some(Value::builtin_object(BUILTIN_CONSOLE)),
                         "Date" => Some(Value::builtin_object(BUILTIN_DATE)),
                         "Error" => Some(Value::builtin_object(BUILTIN_ERROR)),
@@ -2864,6 +2874,99 @@ impl Interpreter {
 
         (func.func)(self, this, args)
             .map_err(|e| InterpreterError::TypeError(e))
+    }
+
+    /// Call a builtin object as a function (e.g., Boolean(value), Number(value))
+    fn call_builtin_as_function(&mut self, builtin_idx: u32, args: &[Value]) -> InterpreterResult<Value> {
+        match builtin_idx {
+            BUILTIN_BOOLEAN => {
+                // Boolean(value) - coerces value to boolean
+                let arg = args.first().copied().unwrap_or(Value::undefined());
+                Ok(Value::bool(self.to_boolean(arg)))
+            }
+            BUILTIN_NUMBER => {
+                // Number(value) - coerces value to number
+                let arg = args.first().copied().unwrap_or(Value::undefined());
+                Ok(self.to_number(arg))
+            }
+            BUILTIN_STRING => {
+                // String(value) - coerces value to string
+                let arg = args.first().copied().unwrap_or(Value::undefined());
+                Ok(self.to_string_value(arg))
+            }
+            _ => Err(InterpreterError::TypeError(format!(
+                "Builtin {} is not callable as a function",
+                builtin_idx
+            ))),
+        }
+    }
+
+    /// Convert a value to boolean
+    fn to_boolean(&self, val: Value) -> bool {
+        if val.is_undefined() || val.is_null() {
+            false
+        } else if let Some(b) = val.to_bool() {
+            b
+        } else if let Some(n) = val.to_i32() {
+            n != 0
+        } else if let Some(str_idx) = val.to_string_idx() {
+            // Empty string is falsy
+            if let Some(s) = self.get_string_by_idx(str_idx) {
+                !s.is_empty()
+            } else {
+                true
+            }
+        } else {
+            // Objects, arrays, closures are truthy
+            true
+        }
+    }
+
+    /// Convert a value to number
+    fn to_number(&self, val: Value) -> Value {
+        if let Some(n) = val.to_i32() {
+            Value::int(n)
+        } else if let Some(b) = val.to_bool() {
+            Value::int(if b { 1 } else { 0 })
+        } else if val.is_undefined() {
+            Value::int(0) // Should be NaN but we use 0
+        } else if val.is_null() {
+            Value::int(0)
+        } else if let Some(str_idx) = val.to_string_idx() {
+            // Try to parse string as number
+            if let Some(s) = self.get_string_by_idx(str_idx) {
+                s.trim().parse::<i32>().map(Value::int).unwrap_or(Value::int(0))
+            } else {
+                Value::int(0)
+            }
+        } else {
+            Value::int(0) // Should be NaN for objects
+        }
+    }
+
+    /// Convert a value to string
+    fn to_string_value(&mut self, val: Value) -> Value {
+        let s = if val.is_undefined() {
+            "undefined".to_string()
+        } else if val.is_null() {
+            "null".to_string()
+        } else if let Some(b) = val.to_bool() {
+            b.to_string()
+        } else if let Some(n) = val.to_i32() {
+            n.to_string()
+        } else if val.to_string_idx().is_some() {
+            // Already a string - return as-is
+            return val;
+        } else if val.is_array() {
+            "[object Array]".to_string()
+        } else if val.is_object() {
+            "[object Object]".to_string()
+        } else if val.is_closure() {
+            "[object Function]".to_string()
+        } else {
+            "".to_string()
+        };
+        self.create_runtime_string(s)
     }
 
     /// Register built-in native functions

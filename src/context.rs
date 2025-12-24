@@ -2534,4 +2534,108 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    // ========================================
+    // Boolean Tests
+    // ========================================
+
+    #[test]
+    fn test_boolean_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Boolean(true);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_boolean_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Boolean(false);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_boolean_number_truthy() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Boolean(42);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_boolean_zero_falsy() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Boolean(0);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_boolean_undefined_falsy() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Boolean(undefined);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_boolean_null_falsy() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Boolean(null);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_number_coercion() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Number(true);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_number_coercion_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Number(false);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_string_coercion() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return String(42);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_coercion_bool() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return String(true);
+        ").unwrap();
+        assert!(result.is_string());
+    }
 }

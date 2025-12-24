@@ -76,7 +76,7 @@
 - [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length)
 - [x] 5.4 Implement `String` constructor and methods (length, charAt, indexOf, slice, substring, toUpperCase, toLowerCase, trim, split)
 - [x] 5.5 Implement `Number` constructor and methods (isInteger, isNaN, isFinite, MAX_VALUE, MIN_VALUE)
-- [ ] 5.6 Implement `Boolean` constructor
+- [x] 5.6 Implement `Boolean` constructor (Boolean/Number/String as functions)
 - [x] 5.7 Implement global functions (partial: parseInt, isNaN)
 
 **Status**: In Progress (native function infrastructure complete)
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 6 In Progress (Date.now complete)
+**Last Updated**: Stage 5-6 In Progress (Type coercion complete)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 257 passing
+**Test Count**: 267 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -357,4 +357,13 @@
 - Useful for relative timing within ~12 day windows
 - 3 Date tests
 
-**Next Action**: Implement RegExp or Object/Function prototypes
+**Stage 5.6 Type Coercion Functions**:
+- Boolean(value) - coerces value to boolean
+- Number(value) - coerces value to number
+- String(value) - coerces value to string
+- to_boolean(), to_number(), to_string_value() helper methods
+- call_builtin_as_function() for calling builtins without `new`
+- BUILTIN_STRING constant for String object
+- 10 type coercion tests
+
+**Next Action**: Implement Object/Function prototypes or RegExp
