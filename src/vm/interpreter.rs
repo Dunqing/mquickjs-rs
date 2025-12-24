@@ -297,6 +297,12 @@ impl Interpreter {
                     self.stack.push(Value::bool(true));
                 }
 
+                // Push empty string
+                op if op == OpCode::PushEmptyString as u8 => {
+                    // Empty string is stored as string index 0xFFFF (special sentinel)
+                    self.stack.push(Value::string(0xFFFF));
+                }
+
                 // Stack manipulation: Drop
                 op if op == OpCode::Drop as u8 => {
                     self.stack
@@ -893,14 +899,16 @@ impl Interpreter {
                         "boolean"
                     } else if val.is_int() {
                         "number"
+                    } else if val.is_string() {
+                        "string"
                     } else if val.is_func() || val.to_func_ptr().is_some() {
                         "function"
                     } else {
                         "object" // Default for pointers/objects
                     };
                     // For now, push an integer representing the type
-                    // (We'll need string support for proper typeof)
-                    // Use a special encoding: 0=undefined, 1=object, 2=boolean, 3=number, 4=function
+                    // (We'll need proper string values for full typeof support)
+                    // Use a special encoding: 0=undefined, 1=object, 2=boolean, 3=number, 4=function, 5=string
                     let type_code = match type_str {
                         "undefined" => 0,
                         "object" => 1,

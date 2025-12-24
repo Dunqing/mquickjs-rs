@@ -218,6 +218,12 @@ impl Value {
         Value(RawValue::make_special(SpecialTag::ShortFunc as u8, idx as i32))
     }
 
+    /// Create a string value (index into string constants)
+    #[inline]
+    pub const fn string(idx: u16) -> Self {
+        Value(RawValue::make_special(SpecialTag::StringChar as u8, idx as i32))
+    }
+
     // Type checking
 
     /// Check if this is null
@@ -274,6 +280,12 @@ impl Value {
         self.0.get_special_tag() == SpecialTag::ShortFunc as u8
     }
 
+    /// Check if this is a string
+    #[inline]
+    pub const fn is_string(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::StringChar as u8
+    }
+
     // Value extraction
 
     /// Get boolean value, returns None if not a boolean
@@ -310,6 +322,16 @@ impl Value {
     #[inline]
     pub const fn to_func_idx(self) -> Option<u16> {
         if self.is_func() {
+            Some(self.0.get_special_value() as u16)
+        } else {
+            None
+        }
+    }
+
+    /// Get string constant index, returns None if not a string
+    #[inline]
+    pub const fn to_string_idx(self) -> Option<u16> {
+        if self.is_string() {
             Some(self.0.get_special_value() as u16)
         } else {
             None

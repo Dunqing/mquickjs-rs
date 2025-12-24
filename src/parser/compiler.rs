@@ -45,6 +45,8 @@ pub struct Compiler<'a> {
     previous_token: Token,
     bytecode: Vec<u8>,
     constants: Vec<Value>,
+    /// String constant pool
+    string_constants: Vec<String>,
     /// Local variables in current scope
     locals: Vec<Local>,
     /// Maximum number of locals ever used (for frame allocation)
@@ -75,6 +77,7 @@ impl<'a> Compiler<'a> {
             previous_token: Token::Eof,
             bytecode: Vec::new(),
             constants: Vec::new(),
+            string_constants: Vec::new(),
             locals: Vec::new(),
             max_locals: 0,
             scope_depth: 0,
@@ -102,6 +105,7 @@ impl<'a> Compiler<'a> {
             Ok(CompiledFunction {
                 bytecode: self.bytecode,
                 constants: self.constants,
+                string_constants: self.string_constants,
                 local_count: self.max_locals,
                 arg_count: 0, // Top-level script has no arguments
                 functions: self.functions,
@@ -613,6 +617,7 @@ impl<'a> Compiler<'a> {
         // Save current compiler state
         let saved_bytecode = std::mem::take(&mut self.bytecode);
         let saved_constants = std::mem::take(&mut self.constants);
+        let saved_string_constants = std::mem::take(&mut self.string_constants);
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_functions = std::mem::take(&mut self.functions);
         let saved_loop_stack = std::mem::take(&mut self.loop_stack);
@@ -622,6 +627,7 @@ impl<'a> Compiler<'a> {
         // Reset for function compilation
         self.bytecode = Vec::new();
         self.constants = Vec::new();
+        self.string_constants = Vec::new();
         self.locals = Vec::new();
         self.functions = Vec::new();
         self.loop_stack = Vec::new();
@@ -657,6 +663,7 @@ impl<'a> Compiler<'a> {
         let result = CompiledFunction {
             bytecode: std::mem::take(&mut self.bytecode),
             constants: std::mem::take(&mut self.constants),
+            string_constants: std::mem::take(&mut self.string_constants),
             local_count: self.max_locals,
             arg_count,
             functions: std::mem::take(&mut self.functions),
@@ -665,6 +672,7 @@ impl<'a> Compiler<'a> {
         // Restore compiler state
         self.bytecode = saved_bytecode;
         self.constants = saved_constants;
+        self.string_constants = saved_string_constants;
         self.locals = saved_locals;
         self.functions = saved_functions;
         self.loop_stack = saved_loop_stack;
@@ -973,9 +981,15 @@ impl<'a> Compiler<'a> {
                 if s.is_empty() {
                     self.emit_op(OpCode::PushEmptyString);
                 } else {
-                    // For now, store string as a constant (we'll need string interning later)
-                    let idx = self.add_constant(Value::undefined()); // Placeholder - needs string support
-                    self.emit_const(idx);
+                    // Store string in string constant pool
+                    let idx = self.string_constants.len() as u16;
+                    self.string_constants.push(s);
+                    // Emit PushConst with a string value
+                    self.emit_op(OpCode::PushConst);
+                    // Use special encoding: high bit set means string constant
+                    // We'll encode this as a Value::string(idx) in the constants
+                    let const_idx = self.add_constant(Value::string(idx));
+                    self.emit_u16(const_idx);
                 }
             }
             Token::True => {
@@ -1426,6 +1440,8 @@ pub struct CompiledFunction {
     pub bytecode: Vec<u8>,
     /// Constant pool
     pub constants: Vec<Value>,
+    /// String constant pool
+    pub string_constants: Vec<String>,
     /// Number of local variables
     pub local_count: usize,
     /// Number of arguments

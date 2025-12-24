@@ -113,6 +113,7 @@ impl Context {
             has_arguments: false,
             bytecode: compiled.bytecode,
             constants: compiled.constants,
+            string_constants: compiled.string_constants,
             source_file: None,
             line_numbers: Vec::new(),
             inner_functions,
@@ -569,7 +570,7 @@ mod tests {
     fn test_typeof_operator() {
         let mut ctx = Context::new(64 * 1024);
 
-        // typeof returns type codes: 0=undefined, 1=object, 2=boolean, 3=number, 4=function
+        // typeof returns type codes: 0=undefined, 1=object, 2=boolean, 3=number, 4=function, 5=string
         // typeof undefined
         let result = ctx.eval("var x; return typeof x;").unwrap();
         assert_eq!(result.to_i32(), Some(0)); // undefined
@@ -589,5 +590,50 @@ mod tests {
         // typeof function
         let result = ctx.eval("function f() {} return typeof f;").unwrap();
         assert_eq!(result.to_i32(), Some(4)); // function
+    }
+
+    #[test]
+    fn test_string_literal() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // typeof string
+        let result = ctx.eval("return typeof \"hello\";").unwrap();
+        assert_eq!(result.to_i32(), Some(5)); // string
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Empty string
+        let result = ctx.eval("return typeof \"\";").unwrap();
+        assert_eq!(result.to_i32(), Some(5)); // string
+    }
+
+    #[test]
+    fn test_string_variable() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Store string in variable and check type
+        let result = ctx.eval("var s = \"world\"; return typeof s;").unwrap();
+        assert_eq!(result.to_i32(), Some(5)); // string
+    }
+
+    #[test]
+    fn test_string_self_equality() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String variable equals itself
+        let result = ctx.eval("var s = \"test\"; return s === s;").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_empty_string_equality() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Two empty strings are equal (both map to same sentinel index)
+        let result = ctx.eval("return \"\" === \"\";").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
     }
 }

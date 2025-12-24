@@ -128,6 +128,8 @@ pub struct FunctionBytecode {
     pub bytecode: Vec<u8>,
     /// Constant pool
     pub constants: Vec<Value>,
+    /// String constant pool
+    pub string_constants: Vec<String>,
     /// Debug info: source filename
     pub source_file: Option<String>,
     /// Debug info: line number table (pc -> line)
@@ -147,6 +149,7 @@ impl FunctionBytecode {
             has_arguments: false,
             bytecode: Vec::new(),
             constants: Vec::new(),
+            string_constants: Vec::new(),
             source_file: None,
             line_numbers: Vec::new(),
             inner_functions: Vec::new(),
@@ -168,6 +171,18 @@ impl FunctionBytecode {
     /// Get a constant from the constant pool
     pub fn get_constant(&self, idx: u16) -> Option<Value> {
         self.constants.get(idx as usize).copied()
+    }
+
+    /// Add a string to the string constant pool
+    pub fn add_string(&mut self, s: String) -> u16 {
+        let idx = self.string_constants.len() as u16;
+        self.string_constants.push(s);
+        idx
+    }
+
+    /// Get a string from the string constant pool
+    pub fn get_string(&self, idx: u16) -> Option<&str> {
+        self.string_constants.get(idx as usize).map(|s| s.as_str())
     }
 
     /// Emit a single byte
