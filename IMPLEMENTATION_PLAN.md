@@ -140,11 +140,11 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 4 Mostly Complete
+**Last Updated**: Stage 4 Complete
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
-- `src/value.rs` - JSValue tagged union
+- `src/value.rs` - JSValue tagged union with string support
 - `src/context.rs` - JSContext
 - `src/gc/mod.rs`, `allocator.rs`, `collector.rs` - GC system
 - `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM
@@ -155,11 +155,11 @@
 - `src/runtime/string.rs` - JSString, StringTable
 - `src/runtime/property.rs` - PropertyTable with hash table
 - `src/runtime/array.rs` - JSArray with no-hole semantics
-- `src/runtime/function.rs` - CFunction, Closure, FunctionBytecode
+- `src/runtime/function.rs` - CFunction, Closure, FunctionBytecode with string_constants
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 130 passing
+**Test Count**: 135 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -179,5 +179,6 @@
 - Recursive functions (via ThisFunc opcode)
 - break and continue statements in loops
 - typeof operator (returns type code integers)
+- String literals (stored in string_constants pool)
 
 **Next Action**: Begin Stage 5 (Core Builtins) or add closures (Stage 7)
