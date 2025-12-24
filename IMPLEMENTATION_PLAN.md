@@ -91,9 +91,9 @@
 - [x] 6.3 Implement `JSON` object (stringify, parse)
 - [ ] 6.4 Implement `RegExp` object
 - [ ] 6.5 Implement `TypedArray` objects
-- [ ] 6.6 Implement `Date.now()`
+- [x] 6.6 Implement `Date.now()`
 
-**Status**: In Progress (Error, Math, JSON complete)
+**Status**: In Progress (Error, Math, JSON, Date complete)
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 6 In Progress (JSON object complete)
+**Last Updated**: Stage 6 In Progress (Date.now complete)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 254 passing
+**Test Count**: 257 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -350,4 +350,11 @@
 - current_string_constants field for native function access to compile-time strings
 - 11 JSON tests
 
-**Next Action**: Implement RegExp or Date.now()
+**Stage 6.6 Date Object**:
+- BUILTIN_DATE constant for Date object
+- Date.now() returns current timestamp in milliseconds
+- Value capped to 2^30 range for 31-bit integer compatibility
+- Useful for relative timing within ~12 day windows
+- 3 Date tests
+
+**Next Action**: Implement RegExp or Object/Function prototypes

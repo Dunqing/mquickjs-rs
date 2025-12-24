@@ -28,6 +28,8 @@ pub const BUILTIN_REFERENCE_ERROR: u32 = 7;
 pub const BUILTIN_SYNTAX_ERROR: u32 = 8;
 /// RangeError constructor index
 pub const BUILTIN_RANGE_ERROR: u32 = 9;
+/// Date object index
+pub const BUILTIN_DATE: u32 = 10;
 
 /// Native function signature
 ///
@@ -1813,6 +1815,7 @@ impl Interpreter {
                         "Number" => Some(Value::builtin_object(BUILTIN_NUMBER)),
                         "Boolean" => Some(Value::builtin_object(BUILTIN_BOOLEAN)),
                         "console" => Some(Value::builtin_object(BUILTIN_CONSOLE)),
+                        "Date" => Some(Value::builtin_object(BUILTIN_DATE)),
                         "Error" => Some(Value::builtin_object(BUILTIN_ERROR)),
                         "TypeError" => Some(Value::builtin_object(BUILTIN_TYPE_ERROR)),
                         "ReferenceError" => Some(Value::builtin_object(BUILTIN_REFERENCE_ERROR)),
@@ -2842,6 +2845,13 @@ impl Interpreter {
                     _ => Value::undefined(),
                 }
             }
+            BUILTIN_DATE => {
+                // Date object properties
+                match prop_name {
+                    "now" => self.get_native_func("Date.now").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             _ => Value::undefined(),
         }
     }
@@ -2906,6 +2916,9 @@ impl Interpreter {
         // JSON methods
         self.register_native("JSON.stringify", native_json_stringify, 1);
         self.register_native("JSON.parse", native_json_parse, 1);
+
+        // Date methods
+        self.register_native("Date.now", native_date_now, 0);
     }
 }
 
@@ -3972,6 +3985,28 @@ impl<'a> JsonParser<'a> {
         interp.objects.push(obj);
         Ok(Value::object_idx(obj_idx))
     }
+}
+
+// ===========================================
+// Date Functions
+// ===========================================
+
+/// Date.now - returns current timestamp in milliseconds
+/// Note: Due to 31-bit integer limitation, we return milliseconds modulo 2^30
+/// This allows for relative timing within ~12 day windows
+fn native_date_now(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Time error: {}", e))?;
+
+    // Return milliseconds modulo 2^30 (about 12.4 days worth)
+    // This fits in 31-bit signed range and allows relative timing
+    let millis = now.as_millis() as i64;
+    let max_val = 1 << 30; // 2^30 = 1073741824
+
+    Ok(Value::int((millis % max_val) as i32))
 }
 
 impl Default for Interpreter {

@@ -2494,4 +2494,44 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    // ========================================
+    // Date Tests
+    // ========================================
+
+    #[test]
+    fn test_date_now() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Date.now() returns a number
+        let result = ctx.eval("
+            return Date.now();
+        ").unwrap();
+        assert!(result.to_i32().is_some());
+    }
+
+    #[test]
+    fn test_date_now_increases() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Two calls to Date.now() should return different or equal values
+        // (time progresses or stays same within execution)
+        let result = ctx.eval("
+            var t1 = Date.now();
+            var t2 = Date.now();
+            return t2 >= t1 ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_date_now_positive() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Date.now() should return a positive value
+        let result = ctx.eval("
+            return Date.now() > 0 ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }
