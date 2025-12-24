@@ -30,14 +30,14 @@
 ### Stage 2: Object System
 **Goal**: JavaScript object representation and property access
 
-- [ ] 2.1 Implement `JSObject` struct with class system
-- [ ] 2.2 Implement `JSString` with UTF-8 storage
-- [ ] 2.3 Implement property hash table
-- [ ] 2.4 Implement basic property operations
+- [x] 2.1 Implement `JSObject` struct with class system
+- [x] 2.2 Implement `JSString` with UTF-8 storage
+- [x] 2.3 Implement property hash table
+- [x] 2.4 Implement basic property operations
 - [ ] 2.5 Implement `JSArray` with no-hole semantics
 - [ ] 2.6 Implement `JSFunction` types (closure, C function)
 
-**Status**: Not Started
+**Status**: In Progress
 
 ---
 
@@ -140,9 +140,9 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 1 Complete, Structure Created
+**Last Updated**: Stage 2 In Progress (2.1-2.4 Complete)
 
-**Files Created**:
+**Files Created/Updated**:
 - `src/lib.rs` - Main library entry
 - `src/value.rs` - JSValue tagged union
 - `src/context.rs` - JSContext
@@ -150,8 +150,13 @@
 - `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM
 - `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser
 - `src/builtins/` - Builtin stubs
-- `src/runtime/` - Runtime stubs
+- `src/runtime/mod.rs` - Runtime module
+- `src/runtime/object.rs` - JSObject, ClassId, Property types
+- `src/runtime/string.rs` - JSString, StringTable
+- `src/runtime/property.rs` - PropertyTable with hash table
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Next Action**: Build and test, then continue with Stage 2 (Object System)
+**Test Count**: 57 passing
+
+**Next Action**: Continue Stage 2 (JSArray, JSFunction)
