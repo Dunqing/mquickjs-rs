@@ -159,7 +159,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 115 passing
+**Test Count**: 119 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -168,10 +168,11 @@
 - Unary operators (-, +, !, ~, typeof, ++, --)
 - Ternary operator (?:)
 - Short-circuit logical operators (&&, ||)
+- Assignment expressions (=, +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=, >>>=)
 - Statement parsing (var/let/const, if/else, while, for, return, block)
-- Local variable tracking with scope depth
+- Local variable tracking with max_locals for proper frame allocation
 - Optimized integer emission (Push0-7, PushI8, PushI16)
 - Jump patching for control flow
 - Context.eval() for end-to-end JavaScript execution
 
-**Next Action**: Begin Stage 5 (Core Builtins) or add more language features
+**Next Action**: Begin Stage 5 (Core Builtins) or add function declarations
