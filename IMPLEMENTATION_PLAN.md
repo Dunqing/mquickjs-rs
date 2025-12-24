@@ -34,10 +34,10 @@
 - [x] 2.2 Implement `JSString` with UTF-8 storage
 - [x] 2.3 Implement property hash table
 - [x] 2.4 Implement basic property operations
-- [ ] 2.5 Implement `JSArray` with no-hole semantics
-- [ ] 2.6 Implement `JSFunction` types (closure, C function)
+- [x] 2.5 Implement `JSArray` with no-hole semantics
+- [x] 2.6 Implement `JSFunction` types (closure, C function)
 
-**Status**: In Progress
+**Status**: Complete
 
 ---
 
@@ -140,7 +140,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 2 In Progress (2.1-2.4 Complete)
+**Last Updated**: Stage 2 Complete
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -154,9 +154,11 @@
 - `src/runtime/object.rs` - JSObject, ClassId, Property types
 - `src/runtime/string.rs` - JSString, StringTable
 - `src/runtime/property.rs` - PropertyTable with hash table
+- `src/runtime/array.rs` - JSArray with no-hole semantics
+- `src/runtime/function.rs` - CFunction, Closure, FunctionBytecode
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 57 passing
+**Test Count**: 75 passing
 
-**Next Action**: Continue Stage 2 (JSArray, JSFunction)
+**Next Action**: Begin Stage 3 (Bytecode & VM Core)
