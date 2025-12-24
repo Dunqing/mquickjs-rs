@@ -1,0 +1,406 @@
+//! JavaScript value representation
+//!
+//! JSValue is a tagged union that fits in a single machine word (32 or 64 bits).
+//! This matches the original C implementation's memory-efficient design.
+//!
+//! # Value encoding (64-bit)
+//! - Bit 0: 0 = 31-bit signed integer (shifted left by 1)
+//! - Bits 0-2 = 001: Pointer to GC-managed object
+//! - Bits 0-2 = 011: Special values (null, undefined, bool, exception, etc.)
+//! - Bits 0-2 = 101: Short float (limited range, no allocation needed)
+
+use std::fmt;
+
+/// Size of a word in bytes (matches pointer size)
+#[cfg(target_pointer_width = "64")]
+pub const WORD_SIZE: usize = 8;
+#[cfg(target_pointer_width = "32")]
+pub const WORD_SIZE: usize = 4;
+
+/// Tag values for value encoding
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tag {
+    /// 31-bit signed integer (1 bit tag)
+    Int = 0,
+    /// Pointer to GC-managed object (2 bits tag)
+    Ptr = 1,
+    /// Special value marker (2 bits tag)
+    Special = 3,
+    /// Short float - only on 64-bit (3 bits tag)
+    #[cfg(target_pointer_width = "64")]
+    ShortFloat = 5,
+}
+
+/// Special value subtypes (5-bit tag)
+/// These include the TAG_SPECIAL (3) base value
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecialTag {
+    Bool = 3,           // JS_TAG_SPECIAL | (0 << 2) = 3
+    Null = 7,           // JS_TAG_SPECIAL | (1 << 2) = 7
+    Undefined = 11,     // JS_TAG_SPECIAL | (2 << 2) = 11
+    Exception = 15,     // JS_TAG_SPECIAL | (3 << 2) = 15
+    ShortFunc = 19,     // JS_TAG_SPECIAL | (4 << 2) = 19
+    Uninitialized = 23, // JS_TAG_SPECIAL | (5 << 2) = 23
+    StringChar = 27,    // JS_TAG_SPECIAL | (6 << 2) = 27
+    CatchOffset = 31,   // JS_TAG_SPECIAL | (7 << 2) = 31
+}
+
+/// Raw value representation - a single word
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RawValue(pub usize);
+
+impl RawValue {
+    /// Number of bits used for special value tag
+    const SPECIAL_TAG_BITS: u32 = 5;
+
+    /// Create a new integer value (31-bit signed)
+    #[inline]
+    pub const fn from_i32(val: i32) -> Self {
+        // Shift left by 1 to make room for tag bit 0
+        RawValue(((val as i64) << 1) as usize)
+    }
+
+    /// Create a new special value
+    #[inline]
+    pub const fn make_special(tag: u8, val: i32) -> Self {
+        RawValue((tag as usize) | ((val as usize) << Self::SPECIAL_TAG_BITS))
+    }
+
+    /// Check if this is an integer
+    #[inline]
+    pub const fn is_int(self) -> bool {
+        (self.0 & 1) == Tag::Int as usize
+    }
+
+    /// Check if this is a pointer
+    #[inline]
+    pub const fn is_ptr(self) -> bool {
+        (self.0 & (WORD_SIZE - 1)) == Tag::Ptr as usize
+    }
+
+    /// Check if this is a special value
+    #[inline]
+    pub const fn is_special(self) -> bool {
+        (self.0 & 0x3) == Tag::Special as usize
+    }
+
+    /// Get integer value (assumes is_int() is true)
+    #[inline]
+    pub const fn get_int(self) -> i32 {
+        (self.0 as i64 >> 1) as i32
+    }
+
+    /// Get special tag (assumes is_special() is true)
+    #[inline]
+    pub const fn get_special_tag(self) -> u8 {
+        (self.0 & ((1 << Self::SPECIAL_TAG_BITS) - 1)) as u8
+    }
+
+    /// Get special value (assumes is_special() is true)
+    #[inline]
+    pub const fn get_special_value(self) -> i32 {
+        (self.0 >> Self::SPECIAL_TAG_BITS) as i32
+    }
+
+    /// Get pointer value (assumes is_ptr() is true)
+    #[inline]
+    pub fn get_ptr<T>(self) -> *mut T {
+        (self.0 - 1) as *mut T
+    }
+
+    /// Create from pointer
+    #[inline]
+    pub fn from_ptr<T>(ptr: *mut T) -> Self {
+        RawValue((ptr as usize) + 1)
+    }
+
+    // Common special values
+    pub const NULL: RawValue = RawValue::make_special(SpecialTag::Null as u8, 0);
+    pub const UNDEFINED: RawValue = RawValue::make_special(SpecialTag::Undefined as u8, 0);
+    pub const UNINITIALIZED: RawValue = RawValue::make_special(SpecialTag::Uninitialized as u8, 0);
+    pub const FALSE: RawValue = RawValue::make_special(SpecialTag::Bool as u8, 0);
+    pub const TRUE: RawValue = RawValue::make_special(SpecialTag::Bool as u8, 1);
+    pub const EXCEPTION: RawValue = RawValue::make_special(SpecialTag::Exception as u8, 0);
+}
+
+impl fmt::Debug for RawValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_int() {
+            write!(f, "Int({})", self.get_int())
+        } else if *self == RawValue::NULL {
+            write!(f, "Null")
+        } else if *self == RawValue::UNDEFINED {
+            write!(f, "Undefined")
+        } else if *self == RawValue::TRUE {
+            write!(f, "Bool(true)")
+        } else if *self == RawValue::FALSE {
+            write!(f, "Bool(false)")
+        } else if *self == RawValue::EXCEPTION {
+            write!(f, "Exception")
+        } else if self.is_ptr() {
+            write!(f, "Ptr({:?})", self.get_ptr::<()>())
+        } else {
+            write!(f, "RawValue(0x{:x})", self.0)
+        }
+    }
+}
+
+/// High-level JavaScript value type
+///
+/// This is the main value type used throughout the engine.
+/// It wraps RawValue and provides a safe, idiomatic Rust interface.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct Value(pub RawValue);
+
+impl Value {
+    // Constructors for primitive values
+
+    /// Create a null value
+    #[inline]
+    pub const fn null() -> Self {
+        Value(RawValue::NULL)
+    }
+
+    /// Create an undefined value
+    #[inline]
+    pub const fn undefined() -> Self {
+        Value(RawValue::UNDEFINED)
+    }
+
+    /// Create a boolean value
+    #[inline]
+    pub const fn bool(b: bool) -> Self {
+        if b {
+            Value(RawValue::TRUE)
+        } else {
+            Value(RawValue::FALSE)
+        }
+    }
+
+    /// Create an integer value (31-bit signed)
+    #[inline]
+    pub const fn int(val: i32) -> Self {
+        // Check if value fits in 31 bits (will panic in const context if not)
+        // Range: -2^30 to 2^30 - 1
+        assert!(val >= -(1 << 30) && val <= (1 << 30) - 1, "Integer out of 31-bit range");
+        Value(RawValue::from_i32(val))
+    }
+
+    /// Create an exception marker
+    #[inline]
+    pub const fn exception() -> Self {
+        Value(RawValue::EXCEPTION)
+    }
+
+    /// Create an uninitialized marker
+    #[inline]
+    pub const fn uninitialized() -> Self {
+        Value(RawValue::UNINITIALIZED)
+    }
+
+    // Type checking
+
+    /// Check if this is null
+    #[inline]
+    pub const fn is_null(self) -> bool {
+        self.0.0 == RawValue::NULL.0
+    }
+
+    /// Check if this is undefined
+    #[inline]
+    pub const fn is_undefined(self) -> bool {
+        self.0.0 == RawValue::UNDEFINED.0
+    }
+
+    /// Check if this is a boolean
+    #[inline]
+    pub const fn is_bool(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::Bool as u8
+    }
+
+    /// Check if this is an integer
+    #[inline]
+    pub const fn is_int(self) -> bool {
+        self.0.is_int()
+    }
+
+    /// Check if this is a pointer to a GC object
+    #[inline]
+    pub const fn is_ptr(self) -> bool {
+        self.0.is_ptr()
+    }
+
+    /// Check if this is an exception
+    #[inline]
+    pub const fn is_exception(self) -> bool {
+        self.0.0 == RawValue::EXCEPTION.0
+    }
+
+    /// Check if this is uninitialized
+    #[inline]
+    pub const fn is_uninitialized(self) -> bool {
+        self.0.0 == RawValue::UNINITIALIZED.0
+    }
+
+    /// Check if this is nullish (null or undefined)
+    #[inline]
+    pub const fn is_nullish(self) -> bool {
+        self.is_null() || self.is_undefined()
+    }
+
+    // Value extraction
+
+    /// Get boolean value, returns None if not a boolean
+    #[inline]
+    pub const fn to_bool(self) -> Option<bool> {
+        if self.is_bool() {
+            Some(self.0.get_special_value() != 0)
+        } else {
+            None
+        }
+    }
+
+    /// Get integer value, returns None if not an integer
+    #[inline]
+    pub const fn to_i32(self) -> Option<i32> {
+        if self.is_int() {
+            Some(self.0.get_int())
+        } else {
+            None
+        }
+    }
+
+    /// Get raw pointer, returns None if not a pointer
+    #[inline]
+    pub fn to_ptr<T>(self) -> Option<*mut T> {
+        if self.is_ptr() {
+            Some(self.0.get_ptr())
+        } else {
+            None
+        }
+    }
+
+    /// Get raw value
+    #[inline]
+    pub const fn raw(self) -> RawValue {
+        self.0
+    }
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Value::undefined()
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_null() {
+            write!(f, "null")
+        } else if self.is_undefined() {
+            write!(f, "undefined")
+        } else if let Some(b) = self.to_bool() {
+            write!(f, "{}", b)
+        } else if let Some(i) = self.to_i32() {
+            write!(f, "{}", i)
+        } else if self.is_exception() {
+            write!(f, "[exception]")
+        } else {
+            write!(f, "[object]")
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for Value {}
+
+/// Short integer range constants
+pub const SHORT_INT_MIN: i32 = -(1 << 30);
+pub const SHORT_INT_MAX: i32 = (1 << 30) - 1;
+
+/// Check if an i32 fits in a short integer
+#[inline]
+pub const fn fits_in_short_int(val: i32) -> bool {
+    val >= SHORT_INT_MIN && val <= SHORT_INT_MAX
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_null() {
+        let v = Value::null();
+        assert!(v.is_null());
+        assert!(!v.is_undefined());
+        assert!(!v.is_bool());
+        assert!(!v.is_int());
+        assert!(v.is_nullish());
+    }
+
+    #[test]
+    fn test_undefined() {
+        let v = Value::undefined();
+        assert!(!v.is_null());
+        assert!(v.is_undefined());
+        assert!(v.is_nullish());
+    }
+
+    #[test]
+    fn test_bool() {
+        let t = Value::bool(true);
+        let f = Value::bool(false);
+
+        assert!(t.is_bool());
+        assert!(f.is_bool());
+        assert_eq!(t.to_bool(), Some(true));
+        assert_eq!(f.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_int() {
+        let zero = Value::int(0);
+        let pos = Value::int(42);
+        let neg = Value::int(-100);
+        let max = Value::int(SHORT_INT_MAX);
+        let min = Value::int(SHORT_INT_MIN);
+
+        assert!(zero.is_int());
+        assert_eq!(zero.to_i32(), Some(0));
+        assert_eq!(pos.to_i32(), Some(42));
+        assert_eq!(neg.to_i32(), Some(-100));
+        assert_eq!(max.to_i32(), Some(SHORT_INT_MAX));
+        assert_eq!(min.to_i32(), Some(SHORT_INT_MIN));
+    }
+
+    #[test]
+    fn test_exception() {
+        let v = Value::exception();
+        assert!(v.is_exception());
+        assert!(!v.is_null());
+        assert!(!v.is_int());
+    }
+
+    #[test]
+    fn test_raw_value_debug() {
+        assert_eq!(format!("{:?}", RawValue::NULL), "Null");
+        assert_eq!(format!("{:?}", RawValue::UNDEFINED), "Undefined");
+        assert_eq!(format!("{:?}", RawValue::TRUE), "Bool(true)");
+        assert_eq!(format!("{:?}", RawValue::from_i32(42)), "Int(42)");
+    }
+}

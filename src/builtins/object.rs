@@ -1,0 +1,1 @@
+//! JavaScript object built-in

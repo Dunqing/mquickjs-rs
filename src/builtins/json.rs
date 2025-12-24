@@ -1,0 +1,1 @@
+//! JavaScript json built-in

@@ -1,0 +1,1 @@
+//! JavaScript error built-in

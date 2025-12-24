@@ -1,0 +1,1 @@
+//! JavaScript function built-in

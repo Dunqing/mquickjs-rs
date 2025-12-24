@@ -1,0 +1,33 @@
+[package]
+name = "mquickjs-rs"
+version = "0.1.0"
+edition = "2024"
+authors = ["MQuickJS Rust Port"]
+description = "A Rust port of MQuickJS - Fabrice Bellard's minimalist JavaScript engine"
+license = "MIT"
+repository = "https://github.com/user/mquickjs-rs"
+keywords = ["javascript", "interpreter", "embedded", "js-engine"]
+categories = ["parser-implementations", "compilers"]
+
+[lib]
+name = "mquickjs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mqjs"
+path = "src/bin/mqjs.rs"
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[features]
+default = []
+# Enable debug dumps (bytecode, GC, etc.)
+dump = []
+# Enable debug GC that moves objects on every allocation
+debug-gc = []
