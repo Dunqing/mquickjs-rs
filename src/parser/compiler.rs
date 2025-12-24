@@ -36,6 +36,8 @@ pub struct Compiler<'a> {
     constants: Vec<Value>,
     /// Local variables in current scope
     locals: Vec<Local>,
+    /// Maximum number of locals ever used (for frame allocation)
+    max_locals: usize,
     /// Current scope depth
     scope_depth: u32,
     /// Current source position
@@ -59,6 +61,7 @@ impl<'a> Compiler<'a> {
             bytecode: Vec::new(),
             constants: Vec::new(),
             locals: Vec::new(),
+            max_locals: 0,
             scope_depth: 0,
             current_pos: SourcePos::default(),
             had_error: false,
@@ -82,7 +85,7 @@ impl<'a> Compiler<'a> {
             Ok(CompiledFunction {
                 bytecode: self.bytecode,
                 constants: self.constants,
-                local_count: self.locals.len(),
+                local_count: self.max_locals,
             })
         }
     }
@@ -147,6 +150,26 @@ impl<'a> Compiler<'a> {
             "[line {}] Error: {}",
             self.current_pos.line, message
         );
+    }
+
+    /// Check if current token is an assignment operator
+    fn is_assignment_op(&self) -> bool {
+        matches!(
+            self.current_token,
+            Token::Eq
+                | Token::PlusEq
+                | Token::MinusEq
+                | Token::StarEq
+                | Token::SlashEq
+                | Token::PercentEq
+                | Token::AmpEq
+                | Token::PipeEq
+                | Token::CaretEq
+                | Token::LtLtEq
+                | Token::GtGtEq
+                | Token::GtGtGtEq
+                | Token::StarStarEq
+        )
     }
 
     /// Synchronize after error
@@ -366,6 +389,12 @@ impl<'a> Compiler<'a> {
             name: name.to_string(),
             depth: self.scope_depth,
         });
+
+        // Track maximum locals for frame allocation
+        if self.locals.len() > self.max_locals {
+            self.max_locals = self.locals.len();
+        }
+
         Ok(index)
     }
 
@@ -388,13 +417,14 @@ impl<'a> Compiler<'a> {
     fn end_scope(&mut self) {
         self.scope_depth -= 1;
 
-        // Pop locals from ended scope
+        // Remove locals from ended scope from our tracking
+        // Note: We don't emit Drop because locals are stored in fixed frame slots,
+        // not on the value stack. The frame cleanup happens on function return.
         while let Some(local) = self.locals.last() {
             if local.depth <= self.scope_depth {
                 break;
             }
             self.locals.pop();
-            self.emit_op(OpCode::Drop);
         }
     }
 
@@ -744,7 +774,45 @@ impl<'a> Compiler<'a> {
             Token::Ident(name) => {
                 let name = name.clone();
                 self.advance();
-                if let Some(idx) = self.resolve_local(&name) {
+
+                // Check for assignment
+                if self.is_assignment_op() {
+                    let op = self.current_token.clone();
+                    self.advance();
+
+                    let idx = self.resolve_local(&name).ok_or_else(|| {
+                        CompileError::SyntaxError(format!("Undefined variable '{}'", name))
+                    })?;
+
+                    // For compound assignment (+=, -=, etc.), get the current value first
+                    if !matches!(op, Token::Eq) {
+                        self.emit_get_local(idx);
+                    }
+
+                    // Parse the right-hand side
+                    self.parse_precedence(Precedence::Assignment)?;
+
+                    // For compound assignment, apply the operation
+                    match op {
+                        Token::Eq => {}
+                        Token::PlusEq => self.emit_op(OpCode::Add),
+                        Token::MinusEq => self.emit_op(OpCode::Sub),
+                        Token::StarEq => self.emit_op(OpCode::Mul),
+                        Token::SlashEq => self.emit_op(OpCode::Div),
+                        Token::PercentEq => self.emit_op(OpCode::Mod),
+                        Token::AmpEq => self.emit_op(OpCode::And),
+                        Token::PipeEq => self.emit_op(OpCode::Or),
+                        Token::CaretEq => self.emit_op(OpCode::Xor),
+                        Token::LtLtEq => self.emit_op(OpCode::Shl),
+                        Token::GtGtEq => self.emit_op(OpCode::Sar),
+                        Token::GtGtGtEq => self.emit_op(OpCode::Shr),
+                        _ => {}
+                    }
+
+                    // Duplicate value (for expression result) and store
+                    self.emit_op(OpCode::Dup);
+                    self.emit_set_local(idx);
+                } else if let Some(idx) = self.resolve_local(&name) {
                     self.emit_get_local(idx);
                 } else {
                     // Global variable - emit as property access on global object

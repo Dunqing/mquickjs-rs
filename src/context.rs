@@ -277,11 +277,71 @@ mod tests {
                 i = i + 1;
             }
             return sum;
-        ");
+        ").unwrap();
 
-        // This will fail because we haven't implemented assignment expressions yet
-        // For now, let's test a simpler case
-        assert!(result.is_err() || result.unwrap().to_i32() == Some(15));
+        assert_eq!(result.to_i32(), Some(15));
+    }
+
+    #[test]
+    fn test_eval_assignment() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Simple assignment
+        let result = ctx.eval("var x = 5; x = 10; return x;").unwrap();
+        assert_eq!(result.to_i32(), Some(10));
+
+        // Assignment returns the assigned value
+        let result = ctx.eval("var x = 0; return x = 42;").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_eval_compound_assignment() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("var x = 10; x += 5; return x;").unwrap();
+        assert_eq!(result.to_i32(), Some(15));
+
+        let result = ctx.eval("var x = 10; x -= 3; return x;").unwrap();
+        assert_eq!(result.to_i32(), Some(7));
+
+        let result = ctx.eval("var x = 4; x *= 3; return x;").unwrap();
+        assert_eq!(result.to_i32(), Some(12));
+
+        let result = ctx.eval("var x = 20; x /= 4; return x;").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_eval_for_loop() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Simple for loop test - just count iterations
+        let result = ctx.eval("
+            var count = 0;
+            for (var i = 0; i < 3; i = i + 1) {
+                count = count + 1;
+            }
+            return count;
+        ").unwrap();
+
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_eval_for_loop_sum() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Sum 1 to 5 using for loop
+        let result = ctx.eval("
+            var sum = 0;
+            for (var i = 1; i < 6; i = i + 1) {
+                sum = sum + i;
+            }
+            return sum;
+        ").unwrap();
+
+        assert_eq!(result.to_i32(), Some(15));
     }
 
     #[test]
