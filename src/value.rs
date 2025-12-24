@@ -44,8 +44,12 @@ pub enum SpecialTag {
     ShortFunc = 19,     // JS_TAG_SPECIAL | (4 << 2) = 19
     Uninitialized = 23, // JS_TAG_SPECIAL | (5 << 2) = 23
     StringChar = 27,    // JS_TAG_SPECIAL | (6 << 2) = 27
-    CatchOffset = 31,   // JS_TAG_SPECIAL | (7 << 2) = 31
+    CatchOffset = 31,   // JS_TAG_SPECIAL | (7 << 2) = 31 (used for closures and arrays)
 }
+
+/// Marker bit to distinguish arrays from closures in the CatchOffset tag
+/// When the high bit of the value is set, it's an array index
+pub const ARRAY_INDEX_MARKER: i32 = 1 << 26;
 
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -230,6 +234,16 @@ impl Value {
         Value(RawValue::make_special(SpecialTag::CatchOffset as u8, idx as i32))
     }
 
+    /// Create an array value (index into interpreter's arrays)
+    /// Uses high bit marker to distinguish from closures
+    #[inline]
+    pub const fn array_idx(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | ARRAY_INDEX_MARKER,
+        ))
+    }
+
     // Type checking
 
     /// Check if this is null
@@ -293,9 +307,19 @@ impl Value {
     }
 
     /// Check if this is a closure
+    /// Closures use CatchOffset tag without high bit set
     #[inline]
     pub const fn is_closure(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & ARRAY_INDEX_MARKER) == 0
+    }
+
+    /// Check if this is an array
+    /// Arrays use CatchOffset tag with high bit set
+    #[inline]
+    pub const fn is_array(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & ARRAY_INDEX_MARKER) != 0
     }
 
     // Value extraction
@@ -360,6 +384,17 @@ impl Value {
         }
     }
 
+    /// Get array index, returns None if not an array
+    #[inline]
+    pub const fn to_array_idx(self) -> Option<u32> {
+        if self.is_array() {
+            // Mask off the array marker bit to get the actual index
+            Some((self.0.get_special_value() & !ARRAY_INDEX_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
     /// Get function bytecode pointer, returns None if not a pointer-based function
     #[inline]
     pub fn to_func_ptr(self) -> Option<*const crate::runtime::FunctionBytecode> {
@@ -401,6 +436,8 @@ impl fmt::Display for Value {
             write!(f, "{}", i)
         } else if self.is_exception() {
             write!(f, "[exception]")
+        } else if self.is_array() {
+            write!(f, "[array]")
         } else {
             write!(f, "[object]")
         }

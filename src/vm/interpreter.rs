@@ -168,6 +168,9 @@ pub struct Interpreter {
     closures: Vec<ClosureData>,
     /// Exception handler stack
     exception_handlers: Vec<ExceptionHandler>,
+    /// Arrays created during execution
+    /// Values on the stack can reference arrays by index
+    arrays: Vec<Vec<Value>>,
 }
 
 impl Interpreter {
@@ -185,6 +188,7 @@ impl Interpreter {
             runtime_strings: Vec::new(),
             closures: Vec::new(),
             exception_handlers: Vec::new(),
+            arrays: Vec::new(),
         }
     }
 
@@ -197,6 +201,7 @@ impl Interpreter {
             runtime_strings: Vec::new(),
             closures: Vec::new(),
             exception_handlers: Vec::new(),
+            arrays: Vec::new(),
         }
     }
 
@@ -246,6 +251,23 @@ impl Interpreter {
     /// Get a closure by index
     fn get_closure(&self, idx: u32) -> Option<&ClosureData> {
         self.closures.get(idx as usize)
+    }
+
+    /// Create an array and return a Value that references it
+    fn create_array(&mut self, elements: Vec<Value>) -> Value {
+        let idx = self.arrays.len();
+        self.arrays.push(elements);
+        Value::array_idx(idx as u32)
+    }
+
+    /// Get an array by index
+    fn get_array(&self, idx: u32) -> Option<&Vec<Value>> {
+        self.arrays.get(idx as usize)
+    }
+
+    /// Get a mutable array by index
+    fn get_array_mut(&mut self, idx: u32) -> Option<&mut Vec<Value>> {
+        self.arrays.get_mut(idx as usize)
     }
 
     /// Get a mutable closure by index
@@ -1268,6 +1290,104 @@ impl Interpreter {
                             format!("Uncaught exception: {:?}", exception)
                         ));
                     }
+                }
+
+                // ArrayFrom - create array from stack elements
+                op if op == OpCode::ArrayFrom as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    // Read number of elements (16-bit)
+                    let count = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Pop elements from stack (they were pushed in order)
+                    let mut elements = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        elements.push(self.stack.pop().ok_or(InterpreterError::StackUnderflow)?);
+                    }
+                    elements.reverse(); // Elements were pushed left-to-right
+
+                    // Create array and push reference
+                    let arr_val = self.create_array(elements);
+                    self.stack.push(arr_val);
+                }
+
+                // GetArrayEl - get array element: arr idx -> val
+                op if op == OpCode::GetArrayEl as u8 => {
+                    let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let arr = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get the array
+                    let arr_idx = arr.to_array_idx().ok_or_else(|| {
+                        InterpreterError::TypeError("cannot read property of non-array".to_string())
+                    })?;
+
+                    let array = self.get_array(arr_idx).ok_or_else(|| {
+                        InterpreterError::InternalError("invalid array index".to_string())
+                    })?;
+
+                    // Get the element
+                    let index = idx.to_i32().ok_or_else(|| {
+                        InterpreterError::TypeError("array index must be a number".to_string())
+                    })? as usize;
+
+                    let val = array.get(index).copied().unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+
+                // GetArrayEl2 - get array element, keep object: arr idx -> arr val
+                op if op == OpCode::GetArrayEl2 as u8 => {
+                    let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let arr = self.stack.peek().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get the array
+                    let arr_idx = arr.to_array_idx().ok_or_else(|| {
+                        InterpreterError::TypeError("cannot read property of non-array".to_string())
+                    })?;
+
+                    let array = self.get_array(arr_idx).ok_or_else(|| {
+                        InterpreterError::InternalError("invalid array index".to_string())
+                    })?;
+
+                    // Get the element
+                    let index = idx.to_i32().ok_or_else(|| {
+                        InterpreterError::TypeError("array index must be a number".to_string())
+                    })? as usize;
+
+                    let val = array.get(index).copied().unwrap_or(Value::undefined());
+                    self.stack.push(val);
+                }
+
+                // PutArrayEl - set array element: arr idx val -> val
+                op if op == OpCode::PutArrayEl as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let arr = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get the array
+                    let arr_idx = arr.to_array_idx().ok_or_else(|| {
+                        InterpreterError::TypeError("cannot set property of non-array".to_string())
+                    })?;
+
+                    // Get the index
+                    let index = idx.to_i32().ok_or_else(|| {
+                        InterpreterError::TypeError("array index must be a number".to_string())
+                    })? as usize;
+
+                    // Set the element, extending if necessary
+                    let array = self.get_array_mut(arr_idx).ok_or_else(|| {
+                        InterpreterError::InternalError("invalid array index".to_string())
+                    })?;
+
+                    // Extend array if index is out of bounds
+                    if index >= array.len() {
+                        array.resize(index + 1, Value::undefined());
+                    }
+                    array[index] = val;
+
+                    // Push the assigned value back (assignment is an expression)
+                    self.stack.push(val);
                 }
 
                 // Unknown opcode

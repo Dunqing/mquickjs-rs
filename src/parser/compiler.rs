@@ -1445,6 +1445,15 @@ impl<'a> Compiler<'a> {
                 }
             }
 
+            // Array literal: [1, 2, 3]
+            Token::LBracket => {
+                self.advance();
+                let count = self.array_literal()?;
+                // Emit ArrayFrom opcode with element count
+                self.emit_op(OpCode::ArrayFrom);
+                self.emit_u16(count);
+            }
+
             _ => {
                 return Err(CompileError::SyntaxError(format!(
                     "Unexpected token: {:?}",
@@ -1469,12 +1478,20 @@ impl<'a> Compiler<'a> {
                     self.emit_u16(arg_count);
                 }
 
-                // Array access: a[b]
+                // Array access: a[b] or a[b] = c
                 Token::LBracket => {
                     self.advance();
                     self.expression()?;
                     self.expect(Token::RBracket)?;
-                    self.emit_op(OpCode::GetArrayEl);
+
+                    // Check for assignment
+                    if self.match_token(&Token::Eq) {
+                        // arr[idx] = value
+                        self.expression()?;
+                        self.emit_op(OpCode::PutArrayEl);
+                    } else {
+                        self.emit_op(OpCode::GetArrayEl);
+                    }
                 }
 
                 // Member access: a.b
@@ -1524,6 +1541,35 @@ impl<'a> Compiler<'a> {
         }
 
         self.expect(Token::RParen)?;
+        Ok(count)
+    }
+
+    /// Parse array literal elements: expr, expr, ... ]
+    /// Called after the opening '[' has been consumed
+    fn array_literal(&mut self) -> Result<u16, CompileError> {
+        let mut count = 0;
+
+        if !self.check(&Token::RBracket) {
+            loop {
+                self.expression()?;
+                count += 1;
+
+                if count > 65535 {
+                    return Err(CompileError::SyntaxError("Too many array elements".into()));
+                }
+
+                if !self.match_token(&Token::Comma) {
+                    break;
+                }
+
+                // Handle trailing comma: [1, 2, ]
+                if self.check(&Token::RBracket) {
+                    break;
+                }
+            }
+        }
+
+        self.expect(Token::RBracket)?;
         Ok(count)
     }
 

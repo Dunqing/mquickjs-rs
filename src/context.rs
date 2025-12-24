@@ -958,4 +958,144 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(111)); // (1 + 10) + 100
     }
+
+    #[test]
+    fn test_array_literal_empty() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Empty array
+        let result = ctx.eval("
+            var arr = [];
+            return 1;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_typeof() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check typeof array - should be "object" in JavaScript
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return 42;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_array_literal_with_elements() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Array with elements
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            return arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(20));
+    }
+
+    #[test]
+    fn test_array_element_access() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Access elements at different indices
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            return arr[0] + arr[2] + arr[4];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(9)); // 1 + 3 + 5
+    }
+
+    #[test]
+    fn test_array_element_assignment() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Assign to array element
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            arr[1] = 100;
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(104)); // 1 + 100 + 3
+    }
+
+    #[test]
+    fn test_array_extend_on_assignment() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Assign to index beyond current length
+        let result = ctx.eval("
+            var arr = [1, 2];
+            arr[5] = 100;
+            return arr[5];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(100));
+    }
+
+    #[test]
+    fn test_array_out_of_bounds_returns_undefined() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Access index beyond current length returns undefined
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var x = arr[10];
+            if (x) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0)); // undefined is falsy
+    }
+
+    #[test]
+    fn test_array_in_expression() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Use array elements in expressions
+        let result = ctx.eval("
+            var arr = [2, 3, 4];
+            return arr[0] * arr[1] * arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(24)); // 2 * 3 * 4
+    }
+
+    #[test]
+    fn test_array_nested() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Nested arrays (array of arrays)
+        let result = ctx.eval("
+            var arr = [[1, 2], [3, 4]];
+            var inner = arr[1];
+            return inner[0];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_with_trailing_comma() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Trailing comma is allowed
+        let result = ctx.eval("
+            var arr = [1, 2, 3,];
+            return arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_computed_index() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Use computed index
+        let result = ctx.eval("
+            var arr = [10, 20, 30, 40];
+            var i = 1 + 1;
+            return arr[i];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(30)); // arr[2]
+    }
 }
