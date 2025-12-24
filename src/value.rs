@@ -55,6 +55,10 @@ pub const ARRAY_INDEX_MARKER: i32 = 1 << 26;
 /// When bit 25 is set, it's an object index
 pub const OBJECT_INDEX_MARKER: i32 = 1 << 25;
 
+/// Marker bit to distinguish iterators from closures, arrays, and objects in the CatchOffset tag
+/// When bit 24 is set, it's an iterator index
+pub const ITERATOR_INDEX_MARKER: i32 = 1 << 24;
+
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -258,6 +262,16 @@ impl Value {
         ))
     }
 
+    /// Create an iterator value (index into interpreter's for_in_iterators)
+    /// Uses bit 24 marker to distinguish from closures, arrays, and objects
+    #[inline]
+    pub const fn iterator_idx(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | ITERATOR_INDEX_MARKER,
+        ))
+    }
+
     // Type checking
 
     /// Check if this is null
@@ -325,7 +339,9 @@ impl Value {
     #[inline]
     pub const fn is_closure(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
-            && (self.0.get_special_value() & (ARRAY_INDEX_MARKER | OBJECT_INDEX_MARKER)) == 0
+            && (self.0.get_special_value()
+                & (ARRAY_INDEX_MARKER | OBJECT_INDEX_MARKER | ITERATOR_INDEX_MARKER))
+                == 0
     }
 
     /// Check if this is an array
@@ -342,6 +358,14 @@ impl Value {
     pub const fn is_object(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
             && (self.0.get_special_value() & OBJECT_INDEX_MARKER) != 0
+    }
+
+    /// Check if this is an iterator
+    /// Iterators use CatchOffset tag with bit 24 set
+    #[inline]
+    pub const fn is_iterator(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & ITERATOR_INDEX_MARKER) != 0
     }
 
     // Value extraction
@@ -423,6 +447,17 @@ impl Value {
         if self.is_object() {
             // Mask off the object marker bit to get the actual index
             Some((self.0.get_special_value() & !OBJECT_INDEX_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Get iterator index, returns None if not an iterator
+    #[inline]
+    pub const fn to_iterator_idx(self) -> Option<u32> {
+        if self.is_iterator() {
+            // Mask off the iterator marker bit to get the actual index
+            Some((self.0.get_special_value() & !ITERATOR_INDEX_MARKER) as u32)
         } else {
             None
         }

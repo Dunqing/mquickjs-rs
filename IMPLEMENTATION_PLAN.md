@@ -100,7 +100,7 @@
 ### Stage 7: Advanced Features
 **Goal**: Complete language features
 
-- [ ] 7.1 Implement `for-in` iteration
+- [x] 7.1 Implement `for-in` iteration
 - [ ] 7.2 Implement `for-of` iteration
 - [x] 7.3 Implement `try-catch-finally`
 - [x] 7.4 Implement closure variable capture
@@ -109,7 +109,7 @@
 - [x] 7.7 Implement `delete` and `in` operators
 - [x] 7.8 Implement `instanceof`
 
-**Status**: In Progress (closures, try-catch-finally, arrays, objects, new, in, delete, instanceof complete)
+**Status**: In Progress (closures, try-catch-finally, arrays, objects, new, in, delete, instanceof, for-in complete)
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 7.8 Complete (Closures, try-catch-finally, arrays, objects, new, in, delete, instanceof)
+**Last Updated**: Stage 7.1 Complete (for-in iteration added)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 183 passing
+**Test Count**: 188 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -231,4 +231,12 @@
 - Multiple instances of same constructor correctly recognized
 - Works with closures and regular functions
 
-**Next Action**: Continue Stage 7 (for-in, for-of) or begin Stage 5 (Core Builtins)
+**Stage 7.1 For-In Features**:
+- ForInIterator struct stores keys and iteration position
+- Iterator index stored in hidden local variable
+- ForInStart opcode creates iterator from object/array
+- ForInNext opcode returns next key and done flag
+- Iterates over object property names or array indices
+- Supports break and continue in for-in loops
+
+**Next Action**: Continue Stage 7 (for-of) or begin Stage 5 (Core Builtins)

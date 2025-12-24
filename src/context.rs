@@ -1429,4 +1429,96 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    #[test]
+    fn test_for_in_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Iterate over array indices
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            var sum = 0;
+            for (var k in arr) {
+                sum = sum + 1;
+            }
+            return sum;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3)); // 3 indices
+    }
+
+    #[test]
+    fn test_for_in_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Iterate over object keys
+        let result = ctx.eval("
+            function Obj() {
+                this.a = 1;
+                this.b = 2;
+                this.c = 3;
+                return this;
+            }
+            var obj = new Obj();
+            var count = 0;
+            for (var k in obj) {
+                count = count + 1;
+            }
+            return count;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3)); // 3 properties
+    }
+
+    #[test]
+    fn test_for_in_empty_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Iterate over empty object
+        let result = ctx.eval("
+            function Empty() {
+                return this;
+            }
+            var obj = new Empty();
+            var count = 0;
+            for (var k in obj) {
+                count = count + 1;
+            }
+            return count;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0)); // no properties
+    }
+
+    #[test]
+    fn test_for_in_empty_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Iterate over empty array
+        let result = ctx.eval("
+            var arr = [];
+            var count = 0;
+            for (var k in arr) {
+                count = count + 1;
+            }
+            return count;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0)); // no elements
+    }
+
+    #[test]
+    fn test_for_in_break() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Break in for-in loop
+        let result = ctx.eval("
+            var arr = [10, 20, 30, 40, 50];
+            var count = 0;
+            for (var k in arr) {
+                count = count + 1;
+                if (count > 2) {
+                    break;
+                }
+            }
+            return count;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3)); // stopped after 3
+    }
 }

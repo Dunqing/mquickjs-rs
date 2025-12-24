@@ -34,6 +34,45 @@ impl ObjectInstance {
     }
 }
 
+/// For-in iterator state
+#[derive(Debug, Clone)]
+pub struct ForInIterator {
+    /// Keys to iterate over
+    pub keys: Vec<String>,
+    /// Current index in keys array
+    pub index: usize,
+}
+
+impl ForInIterator {
+    /// Create a new for-in iterator from an object
+    pub fn from_object(obj: &ObjectInstance) -> Self {
+        let keys = obj.properties.iter().map(|(k, _)| k.clone()).collect();
+        ForInIterator { keys, index: 0 }
+    }
+
+    /// Create a new for-in iterator from an array
+    pub fn from_array(arr: &[Value]) -> Self {
+        let keys = (0..arr.len()).map(|i| i.to_string()).collect();
+        ForInIterator { keys, index: 0 }
+    }
+
+    /// Get the next key, or None if done
+    pub fn next(&mut self) -> Option<String> {
+        if self.index < self.keys.len() {
+            let key = self.keys[self.index].clone();
+            self.index += 1;
+            Some(key)
+        } else {
+            None
+        }
+    }
+
+    /// Check if iteration is done
+    pub fn is_done(&self) -> bool {
+        self.index >= self.keys.len()
+    }
+}
+
 /// Closure data storing captured variable values
 #[derive(Debug, Clone)]
 pub struct ClosureData {
@@ -201,6 +240,8 @@ pub struct Interpreter {
     /// Objects created during execution
     /// Values on the stack can reference objects by index
     objects: Vec<ObjectInstance>,
+    /// For-in iterators created during execution
+    for_in_iterators: Vec<ForInIterator>,
 }
 
 impl Interpreter {
@@ -220,6 +261,7 @@ impl Interpreter {
             exception_handlers: Vec::new(),
             arrays: Vec::new(),
             objects: Vec::new(),
+            for_in_iterators: Vec::new(),
         }
     }
 
@@ -234,6 +276,7 @@ impl Interpreter {
             exception_handlers: Vec::new(),
             arrays: Vec::new(),
             objects: Vec::new(),
+            for_in_iterators: Vec::new(),
         }
     }
 
@@ -1793,6 +1836,62 @@ impl Interpreter {
                         Value::bool(false)
                     };
                     self.stack.push(result);
+                }
+
+                // ForInStart - Start for-in iteration: obj -> iter
+                op if op == OpCode::ForInStart as u8 => {
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Create iterator based on value type
+                    let iter = if let Some(obj_idx) = obj.to_object_idx() {
+                        if let Some(obj_instance) = self.get_object(obj_idx) {
+                            ForInIterator::from_object(obj_instance)
+                        } else {
+                            ForInIterator { keys: Vec::new(), index: 0 }
+                        }
+                    } else if let Some(arr_idx) = obj.to_array_idx() {
+                        if let Some(arr) = self.get_array(arr_idx) {
+                            ForInIterator::from_array(arr)
+                        } else {
+                            ForInIterator { keys: Vec::new(), index: 0 }
+                        }
+                    } else {
+                        // For non-objects/arrays, create empty iterator
+                        ForInIterator { keys: Vec::new(), index: 0 }
+                    };
+
+                    // Store iterator and push reference
+                    let iter_idx = self.for_in_iterators.len();
+                    self.for_in_iterators.push(iter);
+                    self.stack.push(Value::iterator_idx(iter_idx as u32));
+                }
+
+                // ForInNext - Get next for-in key: iter -> key done
+                op if op == OpCode::ForInNext as u8 => {
+                    let iter_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    if let Some(iter_idx) = iter_val.to_iterator_idx() {
+                        if let Some(iter) = self.for_in_iterators.get_mut(iter_idx as usize) {
+                            if let Some(key) = iter.next() {
+                                // Push key and false (not done)
+                                let key_val = self.create_runtime_string(key);
+                                self.stack.push(key_val);
+                                self.stack.push(Value::bool(false)); // not done
+                            } else {
+                                // Push undefined and true (done)
+                                self.stack.push(Value::undefined());
+                                self.stack.push(Value::bool(true)); // done
+                            }
+                        } else {
+                            // Invalid iterator, push done
+                            self.stack.push(Value::undefined());
+                            self.stack.push(Value::bool(true));
+                        }
+                    } else {
+                        // Not an iterator, push done
+                        self.stack.push(Value::undefined());
+                        self.stack.push(Value::bool(true));
+                    }
                 }
 
                 // Unknown opcode

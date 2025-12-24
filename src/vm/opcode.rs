@@ -198,6 +198,8 @@ pub enum OpCode {
     // Iteration
     /// Start for-in iteration: obj -> iter
     ForInStart,
+    /// Get next for-in key: iter -> iter key done
+    ForInNext,
     /// Start for-of iteration: obj -> iter
     ForOfStart,
     /// Get next for-of value: iter -> iter val done
@@ -498,6 +500,8 @@ pub static OPCODE_INFO: [OpCodeInfo; OpCode::COUNT] = [
     OpCodeInfo::new(1, 1, 0, OpFormat::None),
     // ForInStart
     OpCodeInfo::new(1, 1, 1, OpFormat::None),
+    // ForInNext - pops 1 (iter), pushes 2 (key, done)
+    OpCodeInfo::new(1, 1, 2, OpFormat::None),
     // ForOfStart
     OpCodeInfo::new(1, 1, 1, OpFormat::None),
     // ForOfNext

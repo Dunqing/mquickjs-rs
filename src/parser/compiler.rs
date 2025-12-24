@@ -878,24 +878,123 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    /// Parse for statement
+    /// Parse for statement (C-style or for-in)
     fn for_statement(&mut self) -> Result<(), CompileError> {
         self.advance(); // consume 'for'
         self.expect(Token::LParen)?;
 
         self.begin_scope();
 
-        // Initializer
-        if self.match_token(&Token::Semicolon) {
-            // No initializer
-        } else if self.check(&Token::Var) {
-            self.var_declaration()?;
-        } else if self.check(&Token::Let) {
-            self.let_declaration()?;
-        } else {
+        // Check for for-in syntax: for (var/let x in obj)
+        if self.check(&Token::Var) || self.check(&Token::Let) {
+            self.advance(); // consume var/let
+
+            if let Token::Ident(name) = self.current_token.clone() {
+                // Look ahead to check if this is for-in
+                // We need to save state and peek at next token
+                let saved_name = name.clone();
+                self.advance(); // consume identifier
+
+                if self.match_token(&Token::In) {
+                    // This is a for-in loop
+                    return self.for_in_statement_rest(saved_name);
+                }
+
+                // Not a for-in loop, restore and continue as C-style for
+                // We already consumed var/let and identifier, need to handle initializer
+                // Declare local first to get the index
+                let index = self.declare_local(&saved_name)?;
+                // Check for initializer
+                if self.match_token(&Token::Eq) {
+                    // Has initializer: var x = expr
+                    self.expression()?;
+                } else {
+                    // No initializer, push undefined
+                    self.emit_op(OpCode::Undefined);
+                }
+                // Store to local
+                self.emit_set_local(index);
+                self.expect(Token::Semicolon)?;
+            } else {
+                return Err(CompileError::SyntaxError(
+                    "Expected identifier in for loop".to_string(),
+                ));
+            }
+        } else if !self.match_token(&Token::Semicolon) {
+            // C-style initializer expression
             self.expression_statement()?;
         }
 
+        // Continue with C-style for loop
+        self.for_c_style_rest()
+    }
+
+    /// Parse rest of for-in statement after "for (var/let name in"
+    fn for_in_statement_rest(&mut self, var_name: String) -> Result<(), CompileError> {
+        // Parse the object to iterate over
+        self.expression()?;
+        self.expect(Token::RParen)?;
+
+        // Create iterator from object - ForInStart converts obj to iterator index
+        self.emit_op(OpCode::ForInStart);
+
+        // Declare a hidden local to store the iterator index
+        // Use a name that can't conflict with user code
+        let iter_slot = self.declare_local("\x00iter")?;
+        self.emit_set_local(iter_slot);
+
+        // Declare the loop variable
+        self.emit_op(OpCode::Undefined);
+        let var_slot = self.declare_local(&var_name)?;
+        self.emit_set_local(var_slot);
+
+        // Loop start - get next key
+        let loop_start = self.current_offset();
+
+        // Push loop context for break/continue
+        self.loop_stack.push(LoopContext {
+            continue_target: loop_start,
+            break_patches: Vec::new(),
+            scope_depth: self.scope_depth,
+        });
+
+        // Get iterator from hidden local
+        self.emit_get_local(iter_slot);
+
+        // ForInNext: iter -> key done
+        self.emit_op(OpCode::ForInNext);
+
+        // Check if done (pops done flag)
+        let exit_jump = self.emit_jump(OpCode::IfTrue);
+
+        // Store key to loop variable (PutLoc pops the key)
+        self.emit_set_local(var_slot);
+
+        // Body
+        self.statement()?;
+
+        // Loop back
+        self.emit_loop(loop_start);
+
+        // Exit point
+        self.patch_jump(exit_jump);
+
+        // Pop remaining key value (undefined from done iteration)
+        self.emit_op(OpCode::Drop);
+
+        // Pop loop context and patch break jumps
+        let loop_ctx = self.loop_stack.pop().unwrap();
+        for patch in loop_ctx.break_patches {
+            self.patch_jump(patch);
+        }
+
+        self.end_scope();
+
+        Ok(())
+    }
+
+    /// Parse rest of C-style for loop after initializer
+    fn for_c_style_rest(&mut self) -> Result<(), CompileError> {
         let loop_start = self.current_offset();
 
         // Condition
