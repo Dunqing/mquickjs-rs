@@ -48,8 +48,12 @@ pub enum SpecialTag {
 }
 
 /// Marker bit to distinguish arrays from closures in the CatchOffset tag
-/// When the high bit of the value is set, it's an array index
+/// When bit 26 is set, it's an array index
 pub const ARRAY_INDEX_MARKER: i32 = 1 << 26;
+
+/// Marker bit to distinguish objects from closures and arrays in the CatchOffset tag
+/// When bit 25 is set, it's an object index
+pub const OBJECT_INDEX_MARKER: i32 = 1 << 25;
 
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -235,12 +239,22 @@ impl Value {
     }
 
     /// Create an array value (index into interpreter's arrays)
-    /// Uses high bit marker to distinguish from closures
+    /// Uses bit 26 marker to distinguish from closures
     #[inline]
     pub const fn array_idx(idx: u32) -> Self {
         Value(RawValue::make_special(
             SpecialTag::CatchOffset as u8,
             (idx as i32) | ARRAY_INDEX_MARKER,
+        ))
+    }
+
+    /// Create an object value (index into interpreter's objects)
+    /// Uses bit 25 marker to distinguish from closures and arrays
+    #[inline]
+    pub const fn object_idx(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | OBJECT_INDEX_MARKER,
         ))
     }
 
@@ -307,19 +321,27 @@ impl Value {
     }
 
     /// Check if this is a closure
-    /// Closures use CatchOffset tag without high bit set
+    /// Closures use CatchOffset tag without array or object marker bits set
     #[inline]
     pub const fn is_closure(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
-            && (self.0.get_special_value() & ARRAY_INDEX_MARKER) == 0
+            && (self.0.get_special_value() & (ARRAY_INDEX_MARKER | OBJECT_INDEX_MARKER)) == 0
     }
 
     /// Check if this is an array
-    /// Arrays use CatchOffset tag with high bit set
+    /// Arrays use CatchOffset tag with bit 26 set
     #[inline]
     pub const fn is_array(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
             && (self.0.get_special_value() & ARRAY_INDEX_MARKER) != 0
+    }
+
+    /// Check if this is an object
+    /// Objects use CatchOffset tag with bit 25 set
+    #[inline]
+    pub const fn is_object(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & OBJECT_INDEX_MARKER) != 0
     }
 
     // Value extraction
@@ -390,6 +412,17 @@ impl Value {
         if self.is_array() {
             // Mask off the array marker bit to get the actual index
             Some((self.0.get_special_value() & !ARRAY_INDEX_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Get object index, returns None if not an object
+    #[inline]
+    pub const fn to_object_idx(self) -> Option<u32> {
+        if self.is_object() {
+            // Mask off the object marker bit to get the actual index
+            Some((self.0.get_special_value() & !OBJECT_INDEX_MARKER) as u32)
         } else {
             None
         }

@@ -1098,4 +1098,120 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(30)); // arr[2]
     }
+
+    // =========================================================================
+    // New operator and object tests
+    // =========================================================================
+
+    #[test]
+    fn test_new_simple_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Simple constructor that sets properties on this
+        let result = ctx.eval("
+            function Point(x, y) {
+                this.x = x;
+                this.y = y;
+                return this;
+            }
+            var p = new Point(3, 4);
+            return p.x + p.y;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(7)); // 3 + 4
+    }
+
+    #[test]
+    fn test_new_without_args() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Constructor with no arguments
+        let result = ctx.eval("
+            function Counter() {
+                this.count = 0;
+                return this;
+            }
+            var c = new Counter();
+            return c.count;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_object_property_get() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Get property from constructed object
+        let result = ctx.eval("
+            function Box(val) {
+                this.value = val;
+                return this;
+            }
+            var b = new Box(42);
+            return b.value;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_object_property_set() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Set property on object after construction
+        let result = ctx.eval("
+            function Obj() {
+                this.a = 1;
+                return this;
+            }
+            var o = new Obj();
+            o.a = 100;
+            return o.a;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(100));
+    }
+
+    #[test]
+    fn test_object_multiple_properties() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object with multiple properties
+        let result = ctx.eval("
+            function Person(name, age) {
+                this.name = name;
+                this.age = age;
+                return this;
+            }
+            var p = new Person(0, 25);
+            return p.age;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(25));
+    }
+
+    #[test]
+    fn test_typeof_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // First, verify the object is created and is_object() works
+        let obj_result = ctx.eval("
+            function Foo() {
+                return this;
+            }
+            var f = new Foo();
+            return f;
+        ").unwrap();
+        assert!(obj_result.is_object(), "Result should be an object");
+
+        // Now test typeof
+        let mut ctx2 = Context::new(64 * 1024);
+        let result = ctx2.eval("
+            function Foo() {
+                return this;
+            }
+            var f = new Foo();
+            if (typeof f === 'object') {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }

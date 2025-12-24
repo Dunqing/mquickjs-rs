@@ -1254,15 +1254,33 @@ impl<'a> Compiler<'a> {
                 if s.is_empty() {
                     self.emit_op(OpCode::PushEmptyString);
                 } else {
-                    // Store string in string constant pool
-                    let idx = self.string_constants.len() as u16;
-                    self.string_constants.push(s);
-                    // Emit PushConst with a string value
-                    self.emit_op(OpCode::PushConst);
-                    // Use special encoding: high bit set means string constant
-                    // We'll encode this as a Value::string(idx) in the constants
-                    let const_idx = self.add_constant(Value::string(idx));
-                    self.emit_u16(const_idx);
+                    // Check for built-in strings used by typeof
+                    use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING};
+                    let builtin_idx = match s.as_str() {
+                        "undefined" => Some(STR_UNDEFINED),
+                        "object" => Some(STR_OBJECT),
+                        "boolean" => Some(STR_BOOLEAN),
+                        "number" => Some(STR_NUMBER),
+                        "function" => Some(STR_FUNCTION),
+                        "string" => Some(STR_STRING),
+                        _ => None,
+                    };
+
+                    if let Some(idx) = builtin_idx {
+                        // Use built-in string constant for typeof comparison
+                        self.emit_op(OpCode::PushConst);
+                        let const_idx = self.add_constant(Value::string(idx));
+                        self.emit_u16(const_idx);
+                    } else {
+                        // Store string in string constant pool
+                        let idx = self.string_constants.len() as u16;
+                        self.string_constants.push(s);
+                        // Emit PushConst with a string value
+                        self.emit_op(OpCode::PushConst);
+                        // We'll encode this as a Value::string(idx) in the constants
+                        let const_idx = self.add_constant(Value::string(idx));
+                        self.emit_u16(const_idx);
+                    }
                 }
             }
             Token::True => {
@@ -1454,6 +1472,24 @@ impl<'a> Compiler<'a> {
                 self.emit_u16(count);
             }
 
+            // New expression: new Constructor() or new Constructor
+            Token::New => {
+                self.advance();
+                // Parse the constructor expression (just the primary, not function call)
+                // We handle the member access chain but not the call
+                self.new_expr_target()?;
+                // Check for argument list
+                let arg_count = if self.check(&Token::LParen) {
+                    self.advance();
+                    self.argument_list()?
+                } else {
+                    0
+                };
+                // Emit CallConstructor opcode
+                self.emit_op(OpCode::CallConstructor);
+                self.emit_u16(arg_count);
+            }
+
             _ => {
                 return Err(CompileError::SyntaxError(format!(
                     "Unexpected token: {:?}",
@@ -1494,17 +1530,28 @@ impl<'a> Compiler<'a> {
                     }
                 }
 
-                // Member access: a.b
+                // Member access: a.b or a.b = c
                 Token::Dot => {
                     self.advance();
                     if let Token::Ident(name) = &self.current_token {
                         let name = name.clone();
                         self.advance();
-                        // Emit GetField with property name as constant
-                        let idx = self.add_constant(Value::undefined()); // Placeholder for string
-                        self.emit_op(OpCode::GetField);
-                        self.emit_u16(idx);
-                        let _ = name; // TODO: use name for property lookup
+
+                        // Store property name as string constant
+                        let str_idx = self.string_constants.len() as u16;
+                        self.string_constants.push(name);
+
+                        // Check for assignment
+                        if self.match_token(&Token::Eq) {
+                            // obj.prop = value
+                            self.expression()?;
+                            self.emit_op(OpCode::PutField);
+                            self.emit_u16(str_idx);
+                        } else {
+                            // obj.prop
+                            self.emit_op(OpCode::GetField);
+                            self.emit_u16(str_idx);
+                        }
                     } else {
                         return Err(CompileError::SyntaxError(
                             "Expected property name".into(),
@@ -1515,6 +1562,71 @@ impl<'a> Compiler<'a> {
                 // Post-increment/decrement handled here for simple variables
                 // (more complex cases would need special handling)
 
+                _ => break,
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse the target of a new expression (identifier or member access, but not function call)
+    /// This is called for `new Foo()` or `new foo.Bar()` - we want to parse the constructor
+    /// expression without consuming the `(` which we'll handle separately.
+    fn new_expr_target(&mut self) -> Result<(), CompileError> {
+        // Parse the primary expression (identifier, grouping, etc.)
+        match &self.current_token {
+            Token::Ident(name) => {
+                let name = name.clone();
+                self.advance();
+                // Resolve as local or capture
+                if let Some(idx) = self.resolve_local(&name) {
+                    self.emit_get_local(idx);
+                } else if let Some(idx) = self.resolve_capture(&name) {
+                    self.emit_get_capture(idx);
+                } else {
+                    return Err(CompileError::SyntaxError(format!(
+                        "Undefined variable '{}'",
+                        name
+                    )));
+                }
+            }
+            Token::LParen => {
+                self.advance();
+                self.expression()?;
+                self.expect(Token::RParen)?;
+            }
+            _ => {
+                return Err(CompileError::SyntaxError(format!(
+                    "Expected constructor expression, got {:?}",
+                    self.current_token
+                )));
+            }
+        }
+
+        // Handle member access chain (but NOT function calls)
+        loop {
+            match &self.current_token {
+                Token::Dot => {
+                    self.advance();
+                    if let Token::Ident(name) = &self.current_token {
+                        let name = name.clone();
+                        self.advance();
+                        let str_idx = self.string_constants.len() as u16;
+                        self.string_constants.push(name);
+                        self.emit_op(OpCode::GetField);
+                        self.emit_u16(str_idx);
+                    } else {
+                        return Err(CompileError::SyntaxError(
+                            "Expected property name".into(),
+                        ));
+                    }
+                }
+                Token::LBracket => {
+                    // Array access: foo[expr]
+                    self.advance();
+                    self.expression()?;
+                    self.expect(Token::RBracket)?;
+                    self.emit_op(OpCode::GetArrayEl);
+                }
                 _ => break,
             }
         }

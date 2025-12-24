@@ -171,6 +171,10 @@ pub struct Interpreter {
     /// Arrays created during execution
     /// Values on the stack can reference arrays by index
     arrays: Vec<Vec<Value>>,
+    /// Objects created during execution
+    /// Values on the stack can reference objects by index
+    /// Each object is a vector of (property_name, value) pairs
+    objects: Vec<Vec<(String, Value)>>,
 }
 
 impl Interpreter {
@@ -189,6 +193,7 @@ impl Interpreter {
             closures: Vec::new(),
             exception_handlers: Vec::new(),
             arrays: Vec::new(),
+            objects: Vec::new(),
         }
     }
 
@@ -202,6 +207,7 @@ impl Interpreter {
             closures: Vec::new(),
             exception_handlers: Vec::new(),
             arrays: Vec::new(),
+            objects: Vec::new(),
         }
     }
 
@@ -268,6 +274,50 @@ impl Interpreter {
     /// Get a mutable array by index
     fn get_array_mut(&mut self, idx: u32) -> Option<&mut Vec<Value>> {
         self.arrays.get_mut(idx as usize)
+    }
+
+    /// Create a new object and return its value
+    fn create_object(&mut self) -> Value {
+        let idx = self.objects.len();
+        self.objects.push(Vec::new());
+        Value::object_idx(idx as u32)
+    }
+
+    /// Get an object by index
+    fn get_object(&self, idx: u32) -> Option<&Vec<(String, Value)>> {
+        self.objects.get(idx as usize)
+    }
+
+    /// Get a mutable object by index
+    fn get_object_mut(&mut self, idx: u32) -> Option<&mut Vec<(String, Value)>> {
+        self.objects.get_mut(idx as usize)
+    }
+
+    /// Get a property from an object
+    fn object_get_property(&self, obj_idx: u32, key: &str) -> Value {
+        if let Some(obj) = self.get_object(obj_idx) {
+            for (k, v) in obj.iter() {
+                if k == key {
+                    return *v;
+                }
+            }
+        }
+        Value::undefined()
+    }
+
+    /// Set a property on an object
+    fn object_set_property(&mut self, obj_idx: u32, key: String, value: Value) {
+        if let Some(obj) = self.get_object_mut(obj_idx) {
+            // Check if property already exists
+            for (k, v) in obj.iter_mut() {
+                if k == &key {
+                    *v = value;
+                    return;
+                }
+            }
+            // Add new property
+            obj.push((key, value));
+        }
     }
 
     /// Get a mutable closure by index
@@ -1172,6 +1222,104 @@ impl Interpreter {
                     // Continue execution in the new frame (run loop will pick it up)
                 }
 
+                // CallConstructor - new operator: func args -> new_object
+                op if op == OpCode::CallConstructor as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let argc = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Collect arguments (they were pushed in order)
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc {
+                        args.push(self.stack.pop().ok_or(InterpreterError::StackUnderflow)?);
+                    }
+                    args.reverse(); // Arguments were pushed left-to-right
+
+                    // Pop the constructor function value
+                    let func_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Create a new object for 'this'
+                    let new_obj = self.create_object();
+
+                    // Determine if this is a closure or a regular function
+                    let (callee_bytecode, callee_closure_idx): (&FunctionBytecode, Option<usize>) =
+                        if let Some(closure_idx) = func_val.to_closure_idx() {
+                            let closure = self.get_closure(closure_idx).ok_or_else(|| {
+                                InterpreterError::InternalError(format!(
+                                    "invalid closure index: {}",
+                                    closure_idx
+                                ))
+                            })?;
+                            (unsafe { &*closure.bytecode }, Some(closure_idx as usize))
+                        } else if let Some(ptr) = func_val.to_func_ptr() {
+                            (unsafe { &*ptr }, None)
+                        } else if let Some(idx) = func_val.to_func_idx() {
+                            let bc = bytecode
+                                .inner_functions
+                                .get(idx as usize)
+                                .ok_or_else(|| {
+                                    InterpreterError::InternalError(format!(
+                                        "invalid function index: {}",
+                                        idx
+                                    ))
+                                })?;
+                            (bc, None)
+                        } else {
+                            return Err(InterpreterError::TypeError(
+                                "not a constructor".to_string(),
+                            ));
+                        };
+
+                    // Check recursion limit
+                    if self.call_stack.len() >= self.max_recursion {
+                        return Err(InterpreterError::InternalError(
+                            "maximum call stack size exceeded".to_string(),
+                        ));
+                    }
+
+                    let callee_frame_ptr = self.stack.len();
+
+                    // Push arguments (pad with undefined if needed)
+                    for i in 0..callee_bytecode.arg_count as usize {
+                        let arg = args.get(i).copied().unwrap_or(Value::undefined());
+                        self.stack.push(arg);
+                    }
+
+                    // Allocate space for locals (beyond arguments)
+                    let extra_locals =
+                        callee_bytecode.local_count.saturating_sub(callee_bytecode.arg_count);
+                    for _ in 0..extra_locals {
+                        self.stack.push(Value::undefined());
+                    }
+
+                    // Create frame with new object as 'this'
+                    let callee_frame = if let Some(closure_idx) = callee_closure_idx {
+                        CallFrame::new_closure(
+                            callee_bytecode as *const _,
+                            callee_frame_ptr,
+                            args.len().min(u16::MAX as usize) as u16,
+                            new_obj, // 'this' is the new object
+                            func_val,
+                            closure_idx,
+                        )
+                    } else {
+                        CallFrame::new(
+                            callee_bytecode as *const _,
+                            callee_frame_ptr,
+                            args.len().min(u16::MAX as usize) as u16,
+                            new_obj, // 'this' is the new object
+                            func_val,
+                        )
+                    };
+                    self.call_stack.push(callee_frame);
+
+                    // Continue execution in the new frame
+                    // When the constructor returns, the result will be handled specially
+                    // (we need to return 'this' if the return value isn't an object)
+                }
+
                 // TypeOf operator
                 op if op == OpCode::TypeOf as u8 => {
                     use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING};
@@ -1189,6 +1337,8 @@ impl Interpreter {
                         STR_STRING
                     } else if val.is_func() || val.to_func_ptr().is_some() || val.is_closure() {
                         STR_FUNCTION
+                    } else if val.is_object() || val.is_array() {
+                        STR_OBJECT
                     } else {
                         STR_OBJECT // Default for pointers/objects
                     };
@@ -1386,6 +1536,55 @@ impl Interpreter {
                     }
                     array[index] = val;
 
+                    // Push the assigned value back (assignment is an expression)
+                    self.stack.push(val);
+                }
+
+                // GetField - get object property: obj -> value
+                op if op == OpCode::GetField as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let str_idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get property name from string constants
+                    let prop_name = bytecode.string_constants.get(str_idx).ok_or_else(|| {
+                        InterpreterError::InternalError(format!("invalid string index: {}", str_idx))
+                    })?;
+
+                    // Get property from object
+                    if let Some(obj_idx) = obj.to_object_idx() {
+                        let val = self.object_get_property(obj_idx, prop_name);
+                        self.stack.push(val);
+                    } else {
+                        // For non-objects, return undefined
+                        self.stack.push(Value::undefined());
+                    }
+                }
+
+                // PutField - set object property: obj val -> val
+                op if op == OpCode::PutField as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let str_idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get property name from string constants
+                    let prop_name = bytecode.string_constants.get(str_idx).ok_or_else(|| {
+                        InterpreterError::InternalError(format!("invalid string index: {}", str_idx))
+                    })?.clone();
+
+                    // Set property on object
+                    if let Some(obj_idx) = obj.to_object_idx() {
+                        self.object_set_property(obj_idx, prop_name, val);
+                    }
                     // Push the assigned value back (assignment is an expression)
                     self.stack.push(val);
                 }

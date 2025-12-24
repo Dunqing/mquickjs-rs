@@ -104,11 +104,12 @@
 - [ ] 7.2 Implement `for-of` iteration
 - [x] 7.3 Implement `try-catch-finally`
 - [x] 7.4 Implement closure variable capture
-- [ ] 7.5 Implement `new` operator
-- [ ] 7.6 Implement `delete` and `in` operators
-- [ ] 7.7 Implement `typeof` and `instanceof`
+- [x] 7.5 Implement array literals and operations
+- [ ] 7.6 Implement `new` operator
+- [ ] 7.7 Implement `delete` and `in` operators
+- [ ] 7.8 Implement `instanceof`
 
-**Status**: In Progress (closures and try-catch-finally complete)
+**Status**: In Progress (closures, try-catch-finally, arrays complete)
 
 ---
 
@@ -140,15 +141,15 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 7.3 and 7.4 Complete (Closures and try-catch-finally)
+**Last Updated**: Stage 7.5 Complete (Closures, try-catch-finally, arrays)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
-- `src/value.rs` - JSValue tagged union with string support, closure support
-- `src/context.rs` - JSContext with closure and try-catch tests
+- `src/value.rs` - JSValue tagged union with string, closure, array support
+- `src/context.rs` - JSContext with closure, try-catch, array tests
 - `src/gc/mod.rs`, `allocator.rs`, `collector.rs` - GC system
-- `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM with closure and exception support
-- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with closure capture and try-catch-finally
+- `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM with closure, exception, array support
+- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with closure capture, try-catch-finally, arrays
 - `src/builtins/` - Builtin stubs
 - `src/runtime/mod.rs` - Runtime module
 - `src/runtime/object.rs` - JSObject, ClassId, Property types
@@ -159,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 154 passing
+**Test Count**: 165 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -204,4 +205,15 @@
 - Nested try-catch with proper handler chaining
 - Exception propagation through function calls
 
-**Next Action**: Begin Stage 5 (Core Builtins) or continue Stage 7 (for-in, new operator)
+**Stage 7.5 Array Features**:
+- Array value type using special tag encoding
+- Array storage in interpreter (Vec<Vec<Value>>)
+- ArrayFrom opcode creates array from stack elements
+- GetArrayEl/GetArrayEl2 opcodes for element access
+- PutArrayEl opcode for element assignment with auto-extend
+- Array literal parsing: [expr, expr, ...]
+- Array access parsing: arr[idx] and arr[idx] = value
+- Out-of-bounds access returns undefined
+- Trailing comma support in array literals
+
+**Next Action**: Continue Stage 7 (new operator, for-in, for-of)
