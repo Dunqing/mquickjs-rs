@@ -2251,4 +2251,247 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    // ========================================
+    // Error Tests
+    // ========================================
+
+    #[test]
+    fn test_error_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // new Error("message") creates an error object
+        let result = ctx.eval("
+            var e = new Error('something went wrong');
+            return typeof e;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_error_name_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Error.name should be "Error"
+        let result = ctx.eval("
+            var e = new Error('test');
+            return e.name;
+        ").unwrap();
+        // Check it's a string (the name property)
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_error_message_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Error.message should be the message passed to constructor
+        let result = ctx.eval("
+            var e = new Error('test message');
+            return e.message;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_type_error_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // new TypeError("message")
+        let result = ctx.eval("
+            var e = new TypeError('type error');
+            return e.name;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_reference_error_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // new ReferenceError("message")
+        let result = ctx.eval("
+            var e = new ReferenceError('ref error');
+            return e.name;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_throw_and_catch_error() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // throw new Error() should be catchable
+        let result = ctx.eval("
+            var caught = 0;
+            try {
+                throw new Error('test');
+            } catch (e) {
+                caught = 1;
+            }
+            return caught;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_catch_error_message() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Catch error and access its message
+        let result = ctx.eval("
+            var msg = '';
+            try {
+                throw new Error('caught message');
+            } catch (e) {
+                msg = e.message;
+            }
+            return msg;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_catch_error_name() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Catch error and access its name
+        let result = ctx.eval("
+            var name = '';
+            try {
+                throw new TypeError('type error');
+            } catch (e) {
+                name = e.name;
+            }
+            return name;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    // ========================================
+    // JSON Tests
+    // ========================================
+
+    #[test]
+    fn test_json_stringify_number() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return JSON.stringify(42);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_json_stringify_boolean() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return JSON.stringify(true);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_json_stringify_null() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return JSON.stringify(null);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_json_stringify_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return JSON.stringify(arr);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_json_stringify_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Create object using constructor and set properties
+        let result = ctx.eval("
+            function Obj() { this.a = 1; this.b = 2; }
+            var obj = new Obj();
+            return JSON.stringify(obj);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_json_parse_number() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = '42';
+            return JSON.parse(s);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_json_parse_boolean() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'true';
+            return JSON.parse(s);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_json_parse_null() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'null';
+            return JSON.parse(s);
+        ").unwrap();
+        assert!(result.is_null());
+    }
+
+    #[test]
+    fn test_json_parse_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = '[1, 2, 3]';
+            var arr = JSON.parse(s);
+            return arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_json_parse_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = '{\"x\": 10, \"y\": 20}';
+            var obj = JSON.parse(s);
+            return obj.x;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10));
+    }
+
+    #[test]
+    fn test_json_parse_nested() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = '{\"arr\": [1, 2, 3], \"obj\": {\"a\": 1}}';
+            var data = JSON.parse(s);
+            return data.arr[0];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }

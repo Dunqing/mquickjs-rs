@@ -86,14 +86,14 @@
 ### Stage 6: Extended Builtins
 **Goal**: Complete built-in library
 
-- [ ] 6.1 Implement `Error` hierarchy
+- [x] 6.1 Implement `Error` hierarchy (Error, TypeError, ReferenceError, SyntaxError, RangeError)
 - [x] 6.2 Implement `Math` object (partial: abs, floor, ceil, round, sqrt, pow, max, min)
-- [ ] 6.3 Implement `JSON` object
+- [x] 6.3 Implement `JSON` object (stringify, parse)
 - [ ] 6.4 Implement `RegExp` object
 - [ ] 6.5 Implement `TypedArray` objects
 - [ ] 6.6 Implement `Date.now()`
 
-**Status**: In Progress (Math object complete)
+**Status**: In Progress (Error, Math, JSON complete)
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 5 In Progress (Array methods complete)
+**Last Updated**: Stage 6 In Progress (JSON object complete)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 235 passing
+**Test Count**: 254 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -326,4 +326,28 @@
 - Array and object formatting support
 - 4 console method tests
 
-**Next Action**: Implement Boolean constructor or Error hierarchy
+**Stage 6.1 Error Hierarchy**:
+- ErrorObject struct with name and message fields
+- error_objects: Vec<ErrorObject> storage in Interpreter
+- ERROR_OBJECT_MARKER (bit 20) for value encoding
+- Value::error_object(), is_error_object(), to_error_object_idx() methods
+- BUILTIN_ERROR, BUILTIN_TYPE_ERROR, BUILTIN_REFERENCE_ERROR, BUILTIN_SYNTAX_ERROR, BUILTIN_RANGE_ERROR constants
+- GetGlobal handler returns builtin Error types
+- CallConstructor handles Error builtin constructors (creates ErrorObject)
+- get_error_property() returns name and message as runtime strings
+- GetField handler dispatches to get_error_property for error objects
+- format_value() handles error object formatting
+- throw new Error("msg") works with try-catch
+- 8 Error tests
+
+**Stage 6.3 JSON Object**:
+- JSON.stringify(value) - serialize value to JSON string
+- JSON.parse(string) - parse JSON string to value
+- Supports: numbers, booleans, null, strings, arrays, objects
+- JsonParser struct for parsing JSON with proper escape handling
+- json_stringify_value() helper for recursive serialization
+- escape_json_string() for proper JSON string escaping
+- current_string_constants field for native function access to compile-time strings
+- 11 JSON tests
+
+**Next Action**: Implement RegExp or Date.now()

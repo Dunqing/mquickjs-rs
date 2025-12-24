@@ -71,6 +71,10 @@ pub const NATIVE_FUNC_MARKER: i32 = 1 << 22;
 /// When bit 21 is set, it's a builtin object index (0=Math, 1=JSON, etc.)
 pub const BUILTIN_OBJECT_MARKER: i32 = 1 << 21;
 
+/// Marker bit for error objects (Error, TypeError, etc.)
+/// When bit 20 is set, it's an error object index
+pub const ERROR_OBJECT_MARKER: i32 = 1 << 20;
+
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -385,7 +389,8 @@ impl Value {
                     | ITERATOR_INDEX_MARKER
                     | FOR_OF_ITERATOR_INDEX_MARKER
                     | NATIVE_FUNC_MARKER
-                    | BUILTIN_OBJECT_MARKER))
+                    | BUILTIN_OBJECT_MARKER
+                    | ERROR_OBJECT_MARKER))
                 == 0
     }
 
@@ -558,6 +563,32 @@ impl Value {
     pub const fn to_builtin_object_idx(self) -> Option<u32> {
         if self.is_builtin_object() {
             Some((self.0.get_special_value() & !BUILTIN_OBJECT_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Create an error object Value from an index
+    #[inline]
+    pub const fn error_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | ERROR_OBJECT_MARKER,
+        ))
+    }
+
+    /// Check if this is an error object
+    #[inline]
+    pub const fn is_error_object(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & ERROR_OBJECT_MARKER) != 0
+    }
+
+    /// Get error object index, returns None if not an error object
+    #[inline]
+    pub const fn to_error_object_idx(self) -> Option<u32> {
+        if self.is_error_object() {
+            Some((self.0.get_special_value() & !ERROR_OBJECT_MARKER) as u32)
         } else {
             None
         }

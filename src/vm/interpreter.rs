@@ -18,6 +18,16 @@ pub const BUILTIN_NUMBER: u32 = 2;
 pub const BUILTIN_BOOLEAN: u32 = 3;
 /// console object index
 pub const BUILTIN_CONSOLE: u32 = 4;
+/// Error constructor index
+pub const BUILTIN_ERROR: u32 = 5;
+/// TypeError constructor index
+pub const BUILTIN_TYPE_ERROR: u32 = 6;
+/// ReferenceError constructor index
+pub const BUILTIN_REFERENCE_ERROR: u32 = 7;
+/// SyntaxError constructor index
+pub const BUILTIN_SYNTAX_ERROR: u32 = 8;
+/// RangeError constructor index
+pub const BUILTIN_RANGE_ERROR: u32 = 9;
 
 /// Native function signature
 ///
@@ -360,6 +370,21 @@ pub struct Interpreter {
     for_of_iterators: Vec<ForOfIterator>,
     /// Native function registry
     native_functions: Vec<NativeFunction>,
+    /// Error objects created during execution
+    /// Stores (error_type, message) pairs
+    error_objects: Vec<ErrorObject>,
+    /// Current compile-time string constants (set during bytecode execution)
+    /// Used by native functions to look up compile-time strings
+    current_string_constants: Option<*const Vec<String>>,
+}
+
+/// Error object storage
+#[derive(Debug, Clone)]
+pub struct ErrorObject {
+    /// Error type name (e.g., "Error", "TypeError")
+    pub name: String,
+    /// Error message
+    pub message: String,
 }
 
 impl Interpreter {
@@ -382,6 +407,8 @@ impl Interpreter {
             for_in_iterators: Vec::new(),
             for_of_iterators: Vec::new(),
             native_functions: Vec::new(),
+            error_objects: Vec::new(),
+            current_string_constants: None,
         };
         interp.register_builtins();
         interp
@@ -401,6 +428,8 @@ impl Interpreter {
             for_in_iterators: Vec::new(),
             for_of_iterators: Vec::new(),
             native_functions: Vec::new(),
+            error_objects: Vec::new(),
+            current_string_constants: None,
         };
         interp.register_builtins();
         interp
@@ -442,16 +471,20 @@ impl Interpreter {
     }
 
     /// Get a string by its index (works for both compile-time and runtime strings)
-    /// Note: For compile-time strings, requires bytecode context which isn't always available.
-    /// This is primarily for runtime strings.
+    /// For compile-time strings, uses current_string_constants if set.
     pub fn get_string_by_idx(&self, str_idx: u16) -> Option<&str> {
         if str_idx >= Self::RUNTIME_STRING_OFFSET {
             let runtime_idx = (str_idx - Self::RUNTIME_STRING_OFFSET) as usize;
             self.runtime_strings.get(runtime_idx).map(|s| s.as_str())
         } else {
-            // Compile-time string - we don't have bytecode context here
-            // This will be handled by the caller with bytecode access
-            None
+            // Compile-time string - use current_string_constants if available
+            if let Some(constants_ptr) = self.current_string_constants {
+                // SAFETY: The pointer is valid during bytecode execution
+                let constants = unsafe { &*constants_ptr };
+                constants.get(str_idx as usize).map(|s| s.as_str())
+            } else {
+                None
+            }
         }
     }
 
@@ -601,6 +634,9 @@ impl Interpreter {
             // Safety: bytecode pointer is valid for frame lifetime
             let bytecode = unsafe { &*frame.bytecode };
             let bc = &bytecode.bytecode;
+
+            // Set current string constants for native functions to access
+            self.current_string_constants = Some(&bytecode.string_constants as *const _);
 
             // Check if we've reached the end
             if frame.pc >= bc.len() {
@@ -1463,6 +1499,47 @@ impl Interpreter {
                     // Pop the constructor function value
                     let func_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
 
+                    // Check if this is a builtin Error constructor
+                    if let Some(builtin_idx) = func_val.to_builtin_object_idx() {
+                        if builtin_idx >= BUILTIN_ERROR && builtin_idx <= BUILTIN_RANGE_ERROR {
+                            // Create an error object
+                            let error_name = match builtin_idx {
+                                BUILTIN_ERROR => "Error",
+                                BUILTIN_TYPE_ERROR => "TypeError",
+                                BUILTIN_REFERENCE_ERROR => "ReferenceError",
+                                BUILTIN_SYNTAX_ERROR => "SyntaxError",
+                                BUILTIN_RANGE_ERROR => "RangeError",
+                                _ => "Error",
+                            };
+
+                            // Get message from first argument (if present)
+                            let message = if let Some(msg_val) = args.first() {
+                                if let Some(str_idx) = msg_val.to_string_idx() {
+                                    self.get_string_by_idx(str_idx)
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_default()
+                                } else if let Some(n) = msg_val.to_i32() {
+                                    n.to_string()
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+
+                            // Create and store the error object
+                            let error_idx = self.error_objects.len() as u32;
+                            self.error_objects.push(ErrorObject {
+                                name: error_name.to_string(),
+                                message,
+                            });
+
+                            // Push the error object value
+                            self.stack.push(Value::error_object(error_idx));
+                            continue;
+                        }
+                    }
+
                     // Create a new object for 'this', storing the constructor reference for instanceof
                     let new_obj = self.create_object_with_constructor(func_val);
 
@@ -1732,9 +1809,15 @@ impl Interpreter {
                         "NaN" => Some(Value::int(0)), // TODO: proper NaN when floats are added
                         "Infinity" => Some(Value::int(i32::MAX)), // TODO: proper infinity when floats are added
                         "Math" => Some(Value::builtin_object(BUILTIN_MATH)),
+                        "JSON" => Some(Value::builtin_object(BUILTIN_JSON)),
                         "Number" => Some(Value::builtin_object(BUILTIN_NUMBER)),
                         "Boolean" => Some(Value::builtin_object(BUILTIN_BOOLEAN)),
                         "console" => Some(Value::builtin_object(BUILTIN_CONSOLE)),
+                        "Error" => Some(Value::builtin_object(BUILTIN_ERROR)),
+                        "TypeError" => Some(Value::builtin_object(BUILTIN_TYPE_ERROR)),
+                        "ReferenceError" => Some(Value::builtin_object(BUILTIN_REFERENCE_ERROR)),
+                        "SyntaxError" => Some(Value::builtin_object(BUILTIN_SYNTAX_ERROR)),
+                        "RangeError" => Some(Value::builtin_object(BUILTIN_RANGE_ERROR)),
                         _ => self.get_native_func(name),
                     };
 
@@ -1934,6 +2017,10 @@ impl Interpreter {
                     } else if obj.is_array() {
                         // Array property access - check for Array.prototype methods
                         let val = self.get_array_property(obj, prop_name);
+                        self.stack.push(val);
+                    } else if let Some(err_idx) = obj.to_error_object_idx() {
+                        // Error object property access
+                        let val = self.get_error_property(err_idx, prop_name);
                         self.stack.push(val);
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         // Get property from regular object
@@ -2678,6 +2765,28 @@ impl Interpreter {
         }
     }
 
+    /// Get a property from an error object
+    fn get_error_property(&mut self, err_idx: u32, prop_name: &str) -> Value {
+        if let Some(err) = self.error_objects.get(err_idx as usize).cloned() {
+            match prop_name {
+                "name" => {
+                    // Return the error name as a runtime string
+                    self.create_runtime_string(err.name)
+                }
+                "message" => {
+                    // Return the error message as a runtime string
+                    self.create_runtime_string(err.message)
+                }
+                "toString" => {
+                    self.get_native_func("Error.prototype.toString").unwrap_or(Value::undefined())
+                }
+                _ => Value::undefined(),
+            }
+        } else {
+            Value::undefined()
+        }
+    }
+
     /// Get a property from a builtin object (Math, JSON, etc.)
     fn get_builtin_property(&self, builtin_idx: u32, prop_name: &str) -> Value {
         match builtin_idx {
@@ -2698,8 +2807,12 @@ impl Interpreter {
                 }
             }
             BUILTIN_JSON => {
-                // JSON object properties (for future use)
-                Value::undefined()
+                // JSON object properties
+                match prop_name {
+                    "stringify" => self.get_native_func("JSON.stringify").unwrap_or(Value::undefined()),
+                    "parse" => self.get_native_func("JSON.parse").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
             }
             BUILTIN_NUMBER => {
                 // Number object properties
@@ -2789,6 +2902,10 @@ impl Interpreter {
         self.register_native("console.log", native_console_log, 0);
         self.register_native("console.error", native_console_error, 0);
         self.register_native("console.warn", native_console_warn, 0);
+
+        // JSON methods
+        self.register_native("JSON.stringify", native_json_stringify, 1);
+        self.register_native("JSON.parse", native_json_parse, 1);
     }
 }
 
@@ -3433,12 +3550,427 @@ fn format_value(interp: &Interpreter, val: Value) -> String {
         } else {
             "[Array]".to_string()
         }
+    } else if val.is_error_object() {
+        if let Some(err_idx) = val.to_error_object_idx() {
+            if let Some(err) = interp.error_objects.get(err_idx as usize) {
+                if err.message.is_empty() {
+                    err.name.clone()
+                } else {
+                    format!("{}: {}", err.name, err.message)
+                }
+            } else {
+                "Error".to_string()
+            }
+        } else {
+            "Error".to_string()
+        }
     } else if val.is_object() {
         "[object Object]".to_string()
     } else if val.is_closure() {
         "[Function]".to_string()
     } else {
         format!("{:?}", val)
+    }
+}
+
+// ===========================================
+// JSON Functions
+// ===========================================
+
+/// JSON.stringify - convert a value to a JSON string
+fn native_json_stringify(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Ok(Value::undefined());
+    }
+    let val = args[0];
+    let json_str = json_stringify_value(interp, val);
+    Ok(interp.create_runtime_string(json_str))
+}
+
+/// Helper function to stringify a value to JSON format
+fn json_stringify_value(interp: &Interpreter, val: Value) -> String {
+    if let Some(n) = val.to_i32() {
+        n.to_string()
+    } else if let Some(b) = val.to_bool() {
+        b.to_string()
+    } else if val.is_null() {
+        "null".to_string()
+    } else if val.is_undefined() {
+        // undefined values are excluded in JSON.stringify
+        "undefined".to_string()
+    } else if let Some(str_idx) = val.to_string_idx() {
+        if let Some(s) = interp.get_string_by_idx(str_idx) {
+            // Escape the string for JSON
+            format!("\"{}\"", escape_json_string(s))
+        } else {
+            "\"\"".to_string()
+        }
+    } else if val.is_array() {
+        if let Some(arr_idx) = val.to_array_idx() {
+            if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+                let items: Vec<String> = arr.iter()
+                    .map(|v| {
+                        let s = json_stringify_value(interp, *v);
+                        // Replace undefined with null in arrays
+                        if s == "undefined" { "null".to_string() } else { s }
+                    })
+                    .collect();
+                format!("[{}]", items.join(","))
+            } else {
+                "[]".to_string()
+            }
+        } else {
+            "[]".to_string()
+        }
+    } else if val.is_object() {
+        if let Some(obj_idx) = val.to_object_idx() {
+            if let Some(obj) = interp.objects.get(obj_idx as usize) {
+                let items: Vec<String> = obj.properties.iter()
+                    .filter_map(|(k, v)| {
+                        let val_str = json_stringify_value(interp, *v);
+                        // Skip undefined values in objects
+                        if val_str == "undefined" {
+                            None
+                        } else {
+                            Some(format!("\"{}\":{}", escape_json_string(k), val_str))
+                        }
+                    })
+                    .collect();
+                format!("{{{}}}", items.join(","))
+            } else {
+                "{}".to_string()
+            }
+        } else {
+            "{}".to_string()
+        }
+    } else if val.is_closure() {
+        // Functions are excluded in JSON.stringify
+        "undefined".to_string()
+    } else {
+        "null".to_string()
+    }
+}
+
+/// Escape a string for JSON output
+fn escape_json_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            c if c < ' ' => result.push_str(&format!("\\u{:04x}", c as u32)),
+            c => result.push(c),
+        }
+    }
+    result
+}
+
+/// JSON.parse - parse a JSON string into a value
+fn native_json_parse(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Err("JSON.parse requires a string argument".to_string());
+    }
+    let val = args[0];
+
+    // Get the string to parse
+    let json_str = if let Some(str_idx) = val.to_string_idx() {
+        if let Some(s) = interp.get_string_by_idx(str_idx) {
+            s.to_string()
+        } else {
+            return Err("Invalid string argument".to_string());
+        }
+    } else if let Some(n) = val.to_i32() {
+        // Numbers can be parsed as JSON
+        return Ok(Value::int(n));
+    } else {
+        return Err("JSON.parse requires a string argument".to_string());
+    };
+
+    // Parse the JSON string
+    let mut parser = JsonParser::new(&json_str);
+    parser.parse_value(interp)
+}
+
+/// Simple JSON parser
+struct JsonParser<'a> {
+    input: &'a str,
+    pos: usize,
+}
+
+impl<'a> JsonParser<'a> {
+    fn new(input: &'a str) -> Self {
+        Self { input, pos: 0 }
+    }
+
+    fn parse_value(&mut self, interp: &mut Interpreter) -> Result<Value, String> {
+        self.skip_whitespace();
+
+        if self.pos >= self.input.len() {
+            return Err("Unexpected end of JSON input".to_string());
+        }
+
+        let c = self.peek_char();
+        match c {
+            '"' => self.parse_string(interp),
+            '[' => self.parse_array(interp),
+            '{' => self.parse_object(interp),
+            't' | 'f' => self.parse_boolean(),
+            'n' => self.parse_null(),
+            '-' | '0'..='9' => self.parse_number(),
+            _ => Err(format!("Unexpected character '{}' in JSON", c)),
+        }
+    }
+
+    fn peek_char(&self) -> char {
+        self.input[self.pos..].chars().next().unwrap_or('\0')
+    }
+
+    fn next_char(&mut self) -> char {
+        let c = self.peek_char();
+        if c != '\0' {
+            self.pos += c.len_utf8();
+        }
+        c
+    }
+
+    fn skip_whitespace(&mut self) {
+        while self.pos < self.input.len() {
+            match self.peek_char() {
+                ' ' | '\t' | '\n' | '\r' => { self.next_char(); }
+                _ => break,
+            }
+        }
+    }
+
+    fn parse_string(&mut self, interp: &mut Interpreter) -> Result<Value, String> {
+        self.next_char(); // consume opening quote
+        let mut result = String::new();
+
+        loop {
+            if self.pos >= self.input.len() {
+                return Err("Unterminated string in JSON".to_string());
+            }
+
+            let c = self.next_char();
+            match c {
+                '"' => break,
+                '\\' => {
+                    let escaped = self.next_char();
+                    match escaped {
+                        '"' => result.push('"'),
+                        '\\' => result.push('\\'),
+                        '/' => result.push('/'),
+                        'n' => result.push('\n'),
+                        'r' => result.push('\r'),
+                        't' => result.push('\t'),
+                        'b' => result.push('\x08'),
+                        'f' => result.push('\x0C'),
+                        'u' => {
+                            // Parse unicode escape \uXXXX
+                            let hex: String = (0..4).filter_map(|_| {
+                                let c = self.next_char();
+                                if c.is_ascii_hexdigit() { Some(c) } else { None }
+                            }).collect();
+                            if hex.len() == 4 {
+                                if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                                    if let Some(c) = char::from_u32(code) {
+                                        result.push(c);
+                                    }
+                                }
+                            }
+                        }
+                        _ => result.push(escaped),
+                    }
+                }
+                _ => result.push(c),
+            }
+        }
+
+        Ok(interp.create_runtime_string(result))
+    }
+
+    fn parse_number(&mut self) -> Result<Value, String> {
+        let start = self.pos;
+
+        // Handle negative sign
+        if self.peek_char() == '-' {
+            self.next_char();
+        }
+
+        // Parse digits
+        while self.pos < self.input.len() && self.peek_char().is_ascii_digit() {
+            self.next_char();
+        }
+
+        // Check for decimal point (we only support integers for now)
+        if self.peek_char() == '.' {
+            // Skip decimal part but parse as integer
+            self.next_char();
+            while self.pos < self.input.len() && self.peek_char().is_ascii_digit() {
+                self.next_char();
+            }
+        }
+
+        // Check for exponent
+        if self.peek_char() == 'e' || self.peek_char() == 'E' {
+            self.next_char();
+            if self.peek_char() == '+' || self.peek_char() == '-' {
+                self.next_char();
+            }
+            while self.pos < self.input.len() && self.peek_char().is_ascii_digit() {
+                self.next_char();
+            }
+        }
+
+        let num_str = &self.input[start..self.pos];
+
+        // Parse as integer (truncating decimals)
+        if let Ok(n) = num_str.parse::<i32>() {
+            Ok(Value::int(n))
+        } else if let Ok(f) = num_str.parse::<f64>() {
+            // Truncate to integer
+            Ok(Value::int(f as i32))
+        } else {
+            Err(format!("Invalid number in JSON: {}", num_str))
+        }
+    }
+
+    fn parse_boolean(&mut self) -> Result<Value, String> {
+        if self.input[self.pos..].starts_with("true") {
+            self.pos += 4;
+            Ok(Value::bool(true))
+        } else if self.input[self.pos..].starts_with("false") {
+            self.pos += 5;
+            Ok(Value::bool(false))
+        } else {
+            Err("Invalid boolean in JSON".to_string())
+        }
+    }
+
+    fn parse_null(&mut self) -> Result<Value, String> {
+        if self.input[self.pos..].starts_with("null") {
+            self.pos += 4;
+            Ok(Value::null())
+        } else {
+            Err("Invalid null in JSON".to_string())
+        }
+    }
+
+    fn parse_array(&mut self, interp: &mut Interpreter) -> Result<Value, String> {
+        self.next_char(); // consume '['
+        self.skip_whitespace();
+
+        let mut items: Vec<Value> = Vec::new();
+
+        // Empty array
+        if self.peek_char() == ']' {
+            self.next_char();
+            let arr_idx = interp.arrays.len() as u32;
+            interp.arrays.push(items);
+            return Ok(Value::array_idx(arr_idx));
+        }
+
+        loop {
+            let value = self.parse_value(interp)?;
+            items.push(value);
+
+            self.skip_whitespace();
+            let c = self.next_char();
+
+            match c {
+                ',' => { self.skip_whitespace(); }
+                ']' => break,
+                _ => return Err(format!("Expected ',' or ']' in array, found '{}'", c)),
+            }
+        }
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(items);
+        Ok(Value::array_idx(arr_idx))
+    }
+
+    fn parse_object(&mut self, interp: &mut Interpreter) -> Result<Value, String> {
+        self.next_char(); // consume '{'
+        self.skip_whitespace();
+
+        let mut props: Vec<(String, Value)> = Vec::new();
+
+        // Empty object
+        if self.peek_char() == '}' {
+            self.next_char();
+            let obj_idx = interp.objects.len() as u32;
+            let obj = ObjectInstance {
+                constructor: None,
+                properties: props,
+            };
+            interp.objects.push(obj);
+            return Ok(Value::object_idx(obj_idx));
+        }
+
+        loop {
+            self.skip_whitespace();
+
+            // Parse key (must be a string)
+            if self.peek_char() != '"' {
+                return Err("Expected string key in object".to_string());
+            }
+
+            // Parse the key string directly
+            self.next_char(); // consume opening quote
+            let mut key = String::new();
+            loop {
+                if self.pos >= self.input.len() {
+                    return Err("Unterminated string key in JSON".to_string());
+                }
+                let c = self.next_char();
+                match c {
+                    '"' => break,
+                    '\\' => {
+                        let escaped = self.next_char();
+                        match escaped {
+                            '"' => key.push('"'),
+                            '\\' => key.push('\\'),
+                            'n' => key.push('\n'),
+                            _ => key.push(escaped),
+                        }
+                    }
+                    _ => key.push(c),
+                }
+            }
+
+            self.skip_whitespace();
+
+            // Expect colon
+            if self.next_char() != ':' {
+                return Err("Expected ':' after key in object".to_string());
+            }
+
+            self.skip_whitespace();
+
+            // Parse value
+            let value = self.parse_value(interp)?;
+            props.push((key, value));
+
+            self.skip_whitespace();
+            let c = self.next_char();
+
+            match c {
+                ',' => { self.skip_whitespace(); }
+                '}' => break,
+                _ => return Err(format!("Expected ',' or '}}' in object, found '{}'", c)),
+            }
+        }
+
+        let obj_idx = interp.objects.len() as u32;
+        let obj = ObjectInstance {
+            constructor: None,
+            properties: props,
+        };
+        interp.objects.push(obj);
+        Ok(Value::object_idx(obj_idx))
     }
 }
 
