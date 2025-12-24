@@ -202,6 +202,22 @@ impl Value {
         Value(RawValue::UNINITIALIZED)
     }
 
+    /// Create a function value from a bytecode pointer
+    ///
+    /// # Safety
+    /// The pointer must remain valid for the lifetime of this value.
+    #[inline]
+    pub fn func_ptr(ptr: *const crate::runtime::FunctionBytecode) -> Self {
+        Value(RawValue::from_ptr(ptr as *mut ()))
+    }
+
+    /// Create a function value (index into inner_functions)
+    /// This is for temporary use during compilation
+    #[inline]
+    pub const fn func(idx: u16) -> Self {
+        Value(RawValue::make_special(SpecialTag::ShortFunc as u8, idx as i32))
+    }
+
     // Type checking
 
     /// Check if this is null
@@ -252,6 +268,12 @@ impl Value {
         self.is_null() || self.is_undefined()
     }
 
+    /// Check if this is a function
+    #[inline]
+    pub const fn is_func(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::ShortFunc as u8
+    }
+
     // Value extraction
 
     /// Get boolean value, returns None if not a boolean
@@ -279,6 +301,26 @@ impl Value {
     pub fn to_ptr<T>(self) -> Option<*mut T> {
         if self.is_ptr() {
             Some(self.0.get_ptr())
+        } else {
+            None
+        }
+    }
+
+    /// Get function index, returns None if not a function (ShortFunc type)
+    #[inline]
+    pub const fn to_func_idx(self) -> Option<u16> {
+        if self.is_func() {
+            Some(self.0.get_special_value() as u16)
+        } else {
+            None
+        }
+    }
+
+    /// Get function bytecode pointer, returns None if not a pointer-based function
+    #[inline]
+    pub fn to_func_ptr(self) -> Option<*const crate::runtime::FunctionBytecode> {
+        if self.is_ptr() {
+            Some(self.0.get_ptr::<crate::runtime::FunctionBytecode>() as *const _)
         } else {
             None
         }

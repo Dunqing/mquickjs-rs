@@ -46,6 +46,8 @@ pub struct Compiler<'a> {
     had_error: bool,
     /// Panic mode (suppress cascading errors)
     panic_mode: bool,
+    /// Compiled inner functions
+    functions: Vec<CompiledFunction>,
 }
 
 impl<'a> Compiler<'a> {
@@ -66,6 +68,7 @@ impl<'a> Compiler<'a> {
             current_pos: SourcePos::default(),
             had_error: false,
             panic_mode: false,
+            functions: Vec::new(),
         }
     }
 
@@ -86,6 +89,8 @@ impl<'a> Compiler<'a> {
                 bytecode: self.bytecode,
                 constants: self.constants,
                 local_count: self.max_locals,
+                arg_count: 0, // Top-level script has no arguments
+                functions: self.functions,
             })
         }
     }
@@ -438,6 +443,7 @@ impl<'a> Compiler<'a> {
             Token::Var => self.var_declaration(),
             Token::Let => self.let_declaration(),
             Token::Const => self.const_declaration(),
+            Token::Function => self.function_declaration(),
             Token::If => self.if_statement(),
             Token::While => self.while_statement(),
             Token::For => self.for_statement(),
@@ -517,6 +523,136 @@ impl<'a> Compiler<'a> {
         self.expect(Token::Semicolon)?;
 
         Ok(())
+    }
+
+    /// Parse function declaration: function name(args) { body }
+    fn function_declaration(&mut self) -> Result<(), CompileError> {
+        self.advance(); // consume 'function'
+
+        // Get function name
+        let name = match &self.current_token {
+            Token::Ident(s) => s.clone(),
+            _ => {
+                return Err(CompileError::SyntaxError(
+                    "Expected function name".into(),
+                ))
+            }
+        };
+        self.advance();
+
+        // Declare the function as a local variable
+        let func_index = self.declare_local(&name)?;
+
+        // Parse parameter list
+        self.expect(Token::LParen)?;
+        let mut params: Vec<String> = Vec::new();
+
+        if !self.check(&Token::RParen) {
+            loop {
+                if let Token::Ident(param_name) = &self.current_token {
+                    params.push(param_name.clone());
+                    self.advance();
+                } else {
+                    return Err(CompileError::SyntaxError(
+                        "Expected parameter name".into(),
+                    ));
+                }
+
+                if !self.match_token(&Token::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+
+        // Parse function body
+        self.expect(Token::LBrace)?;
+
+        // Compile the function body with a new compiler
+        // Pass the function name so it can reference itself for recursion
+        let body_bytecode = self.compile_function_body(Some(&name), &params)?;
+
+        // Store the bytecode in functions list
+        let bytecode_idx = self.functions.len();
+        self.functions.push(body_bytecode);
+
+        // Emit instruction to create function closure
+        self.emit_op(OpCode::FClosure);
+        self.emit_u16(bytecode_idx as u16);
+
+        // Store to local
+        self.emit_set_local(func_index);
+
+        Ok(())
+    }
+
+    /// Compile a function body
+    ///
+    /// If `func_name` is provided, the function can reference itself for recursion.
+    fn compile_function_body(
+        &mut self,
+        func_name: Option<&str>,
+        params: &[String],
+    ) -> Result<CompiledFunction, CompileError> {
+        // Save current compiler state
+        let saved_bytecode = std::mem::take(&mut self.bytecode);
+        let saved_constants = std::mem::take(&mut self.constants);
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_functions = std::mem::take(&mut self.functions);
+        let saved_max_locals = self.max_locals;
+        let saved_scope_depth = self.scope_depth;
+
+        // Reset for function compilation
+        self.bytecode = Vec::new();
+        self.constants = Vec::new();
+        self.locals = Vec::new();
+        self.functions = Vec::new();
+        self.max_locals = 0;
+        self.scope_depth = 0;
+
+        let arg_count = params.len();
+
+        // Declare parameters as locals FIRST (they must be at slots 0..arg_count)
+        for param in params {
+            self.declare_local(param)?;
+        }
+
+        // If function has a name, declare it as a local for recursion
+        // (after parameters so it doesn't affect argument slot positions)
+        // and emit code to initialize it with ThisFunc at the start
+        if let Some(name) = func_name {
+            let func_slot = self.declare_local(name)?;
+            self.emit_op(OpCode::ThisFunc);
+            self.emit_set_local(func_slot);
+        }
+
+        // Parse function body statements
+        while !self.check(&Token::RBrace) && !self.check(&Token::Eof) {
+            self.statement()?;
+        }
+        self.expect(Token::RBrace)?;
+
+        // Emit implicit return undefined
+        self.emit_op(OpCode::ReturnUndef);
+
+        // Create compiled function
+        let result = CompiledFunction {
+            bytecode: std::mem::take(&mut self.bytecode),
+            constants: std::mem::take(&mut self.constants),
+            local_count: self.max_locals,
+            arg_count,
+            functions: std::mem::take(&mut self.functions),
+        };
+
+        // Restore compiler state
+        self.bytecode = saved_bytecode;
+        self.constants = saved_constants;
+        self.locals = saved_locals;
+        self.functions = saved_functions;
+        self.max_locals = saved_max_locals;
+        self.scope_depth = saved_scope_depth;
+
+        Ok(result)
     }
 
     /// Parse if statement
@@ -1203,6 +1339,10 @@ pub struct CompiledFunction {
     pub constants: Vec<Value>,
     /// Number of local variables
     pub local_count: usize,
+    /// Number of arguments
+    pub arg_count: usize,
+    /// Inner functions defined within this function
+    pub functions: Vec<CompiledFunction>,
 }
 
 /// Compilation error

@@ -159,7 +159,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 119 passing
+**Test Count**: 125 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -174,5 +174,8 @@
 - Optimized integer emission (Push0-7, PushI8, PushI16)
 - Jump patching for control flow
 - Context.eval() for end-to-end JavaScript execution
+- Function declarations with parameters
+- Function calls with argument passing
+- Recursive functions (via ThisFunc opcode)
 
-**Next Action**: Begin Stage 5 (Core Builtins) or add function declarations
+**Next Action**: Begin Stage 5 (Core Builtins) or add closures (Stage 7)

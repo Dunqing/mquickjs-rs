@@ -24,6 +24,8 @@ pub struct CallFrame {
     pub prev_frame_ptr: usize,
     /// `this` value for this call
     pub this_val: Value,
+    /// The function value itself (for self-reference/recursion)
+    pub this_func: Value,
 }
 
 impl CallFrame {
@@ -33,6 +35,7 @@ impl CallFrame {
         frame_ptr: usize,
         arg_count: u16,
         this_val: Value,
+        this_func: Value,
     ) -> Self {
         CallFrame {
             bytecode,
@@ -42,6 +45,7 @@ impl CallFrame {
             return_pc: usize::MAX,
             prev_frame_ptr: 0,
             this_val,
+            this_func,
         }
     }
 }
@@ -159,6 +163,7 @@ impl Interpreter {
             frame_ptr,
             args.len().min(u16::MAX as usize) as u16,
             this_val,
+            Value::undefined(), // Top-level call has no function value
         );
         self.call_stack.push(frame);
 
@@ -523,6 +528,13 @@ impl Interpreter {
                     self.stack.push(frame.this_val);
                 }
 
+                // Push current function (for self-reference/recursion)
+                op if op == OpCode::ThisFunc as u8 => {
+                    let frame = self.call_stack.last().unwrap();
+                    // Push the function index that created this frame
+                    self.stack.push(frame.this_func);
+                }
+
                 // Arithmetic: Negate
                 op if op == OpCode::Neg as u8 => {
                     let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
@@ -777,19 +789,97 @@ impl Interpreter {
                     return self.do_return(Value::undefined());
                 }
 
+                // Function closure creation (16-bit function index)
+                op if op == OpCode::FClosure as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let func_idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Get the inner function bytecode pointer
+                    let inner_func = bytecode
+                        .inner_functions
+                        .get(func_idx)
+                        .ok_or_else(|| {
+                            InterpreterError::InternalError(format!(
+                                "invalid function index in FClosure: {}",
+                                func_idx
+                            ))
+                        })?;
+
+                    // Push a function value with the bytecode pointer
+                    self.stack.push(Value::func_ptr(inner_func as *const _));
+                }
+
                 // Function call (16-bit argc)
                 op if op == OpCode::Call as u8 => {
                     let frame = self.call_stack.last_mut().unwrap();
                     let bytecode = unsafe { &*frame.bytecode };
                     let bc = &bytecode.bytecode;
-                    let argc = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]);
+                    let argc = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
                     frame.pc += 2;
 
-                    // For now, just return an error - full implementation requires
-                    // looking up the function and setting up a new frame
-                    return Err(InterpreterError::InternalError(
-                        format!("function calls not yet fully implemented (argc={})", argc),
-                    ));
+                    // Collect arguments (they were pushed in order)
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc {
+                        args.push(self.stack.pop().ok_or(InterpreterError::StackUnderflow)?);
+                    }
+                    args.reverse(); // Arguments were pushed left-to-right
+
+                    // Pop the function value
+                    let func_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get the function bytecode - either from pointer or index
+                    let callee_bytecode: &FunctionBytecode = if let Some(ptr) = func_val.to_func_ptr() {
+                        // Pointer-based function (from FClosure or ThisFunc)
+                        unsafe { &*ptr }
+                    } else if let Some(idx) = func_val.to_func_idx() {
+                        // Index-based function (legacy, shouldn't happen anymore)
+                        bytecode
+                            .inner_functions
+                            .get(idx as usize)
+                            .ok_or_else(|| {
+                                InterpreterError::InternalError(format!(
+                                    "invalid function index: {}",
+                                    idx
+                                ))
+                            })?
+                    } else {
+                        return Err(InterpreterError::TypeError("not a function".to_string()));
+                    };
+
+                    // Check recursion limit
+                    if self.call_stack.len() >= self.max_recursion {
+                        return Err(InterpreterError::InternalError(
+                            "maximum call stack size exceeded".to_string(),
+                        ));
+                    }
+
+                    let callee_frame_ptr = self.stack.len();
+
+                    // Push arguments (pad with undefined if needed)
+                    for i in 0..callee_bytecode.arg_count as usize {
+                        let arg = args.get(i).copied().unwrap_or(Value::undefined());
+                        self.stack.push(arg);
+                    }
+
+                    // Allocate space for locals (beyond arguments)
+                    let extra_locals = callee_bytecode.local_count.saturating_sub(callee_bytecode.arg_count);
+                    for _ in 0..extra_locals {
+                        self.stack.push(Value::undefined());
+                    }
+
+                    let callee_frame = CallFrame::new(
+                        callee_bytecode as *const _,
+                        callee_frame_ptr,
+                        args.len().min(u16::MAX as usize) as u16,
+                        Value::undefined(), // this value
+                        func_val,           // the function value for self-reference
+                    );
+                    self.call_stack.push(callee_frame);
+
+                    // Continue execution in the new frame (run loop will pick it up)
                 }
 
                 // Nop
@@ -1319,6 +1409,7 @@ mod tests {
                 &fb as *const _,
                 0,
                 0,
+                Value::undefined(),
                 Value::undefined(),
             ));
         }

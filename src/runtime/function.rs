@@ -132,6 +132,8 @@ pub struct FunctionBytecode {
     pub source_file: Option<String>,
     /// Debug info: line number table (pc -> line)
     pub line_numbers: Vec<(u32, u32)>,
+    /// Inner functions defined within this function
+    pub inner_functions: Vec<FunctionBytecode>,
 }
 
 impl FunctionBytecode {
@@ -147,6 +149,7 @@ impl FunctionBytecode {
             constants: Vec::new(),
             source_file: None,
             line_numbers: Vec::new(),
+            inner_functions: Vec::new(),
         }
     }
 

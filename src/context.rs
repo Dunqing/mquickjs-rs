@@ -89,17 +89,7 @@ impl Context {
         let compiled = Compiler::new(source).compile()?;
 
         // Convert to FunctionBytecode for the interpreter
-        let bytecode = FunctionBytecode {
-            name: None,
-            arg_count: 0,
-            local_count: compiled.local_count as u16,
-            stack_size: 64, // Default stack size
-            has_arguments: false,
-            bytecode: compiled.bytecode,
-            constants: compiled.constants,
-            source_file: None,
-            line_numbers: Vec::new(),
-        };
+        let bytecode = Self::compiled_to_bytecode(compiled);
 
         // Execute the bytecode
         self.interpreter
@@ -107,23 +97,34 @@ impl Context {
             .map_err(|e| EvalError::RuntimeError(e.to_string()))
     }
 
-    /// Compile JavaScript source code without executing
-    ///
-    /// Returns the compiled bytecode for inspection or later execution.
-    pub fn compile(&self, source: &str) -> Result<FunctionBytecode, CompileError> {
-        let compiled = Compiler::new(source).compile()?;
+    /// Convert CompiledFunction to FunctionBytecode (recursive for inner functions)
+    fn compiled_to_bytecode(compiled: crate::parser::compiler::CompiledFunction) -> FunctionBytecode {
+        let inner_functions = compiled
+            .functions
+            .into_iter()
+            .map(Self::compiled_to_bytecode)
+            .collect();
 
-        Ok(FunctionBytecode {
+        FunctionBytecode {
             name: None,
-            arg_count: 0,
+            arg_count: compiled.arg_count as u16,
             local_count: compiled.local_count as u16,
-            stack_size: 64,
+            stack_size: 64, // Default stack size
             has_arguments: false,
             bytecode: compiled.bytecode,
             constants: compiled.constants,
             source_file: None,
             line_numbers: Vec::new(),
-        })
+            inner_functions,
+        }
+    }
+
+    /// Compile JavaScript source code without executing
+    ///
+    /// Returns the compiled bytecode for inspection or later execution.
+    pub fn compile(&self, source: &str) -> Result<FunctionBytecode, CompileError> {
+        let compiled = Compiler::new(source).compile()?;
+        Ok(Self::compiled_to_bytecode(compiled))
     }
 
     /// Execute pre-compiled bytecode
@@ -395,5 +396,98 @@ mod tests {
         // Missing semicolon should cause compile error
         let result = ctx.eval("return 1 +");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_function_declaration() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Simple function that returns a constant
+        let result = ctx.eval("
+            function five() {
+                return 5;
+            }
+            return five();
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_function_with_args() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Function with arguments
+        let result = ctx.eval("
+            function add(a, b) {
+                return a + b;
+            }
+            return add(10, 20);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(30));
+    }
+
+    #[test]
+    fn test_function_with_local() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Function with local variable
+        let result = ctx.eval("
+            function double(x) {
+                var result = x * 2;
+                return result;
+            }
+            return double(7);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(14));
+    }
+
+    #[test]
+    fn test_recursive_function() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Recursive factorial
+        let result = ctx.eval("
+            function factorial(n) {
+                if (n < 2) {
+                    return 1;
+                }
+                return n * factorial(n - 1);
+            }
+            return factorial(5);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(120)); // 5! = 120
+    }
+
+    #[test]
+    fn test_multiple_functions() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Multiple independent functions (cross-function calls require closures - Stage 7)
+        let result = ctx.eval("
+            function triple(x) {
+                return x * 3;
+            }
+            function negate(x) {
+                return 0 - x;
+            }
+            var a = triple(5);
+            var b = negate(7);
+            return a + b;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(8)); // 15 + (-7) = 8
+    }
+
+    #[test]
+    fn test_nested_function_calls() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test that we can call the same function multiple times
+        let result = ctx.eval("
+            function add(a, b) {
+                return a + b;
+            }
+            return add(add(1, 2), add(3, 4));
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10)); // (1+2) + (3+4) = 10
     }
 }
