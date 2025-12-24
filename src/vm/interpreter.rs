@@ -7,6 +7,29 @@ use crate::value::Value;
 use crate::vm::opcode::OpCode;
 use crate::vm::stack::Stack;
 
+// Builtin object indices
+/// Math object index
+pub const BUILTIN_MATH: u32 = 0;
+/// JSON object index (for future use)
+pub const BUILTIN_JSON: u32 = 1;
+
+/// Native function signature
+///
+/// Native functions take an interpreter reference, this value, and arguments.
+/// Returns a Result with the value or an error message.
+pub type NativeFn = fn(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String>;
+
+/// Native function entry in the registry
+#[derive(Clone)]
+pub struct NativeFunction {
+    /// The name of the function
+    pub name: &'static str,
+    /// The native function implementation
+    pub func: NativeFn,
+    /// Number of expected arguments (for arity checking, 0 = variadic)
+    pub arity: u8,
+}
+
 /// Object instance storing properties and constructor reference
 #[derive(Debug, Clone)]
 pub struct ObjectInstance {
@@ -73,6 +96,42 @@ impl ForInIterator {
     }
 }
 
+/// For-of iterator state (iterates over values)
+#[derive(Debug, Clone)]
+pub struct ForOfIterator {
+    /// Values to iterate over
+    pub values: Vec<Value>,
+    /// Current index in values array
+    pub index: usize,
+}
+
+impl ForOfIterator {
+    /// Create a new for-of iterator from an array
+    pub fn from_array(arr: &[Value]) -> Self {
+        ForOfIterator {
+            values: arr.to_vec(),
+            index: 0,
+        }
+    }
+
+    /// Create a new for-of iterator from an object (iterates over property values)
+    pub fn from_object(obj: &ObjectInstance) -> Self {
+        let values = obj.properties.iter().map(|(_, v)| *v).collect();
+        ForOfIterator { values, index: 0 }
+    }
+
+    /// Get the next value, or None if done
+    pub fn next(&mut self) -> Option<Value> {
+        if self.index < self.values.len() {
+            let val = self.values[self.index];
+            self.index += 1;
+            Some(val)
+        } else {
+            None
+        }
+    }
+}
+
 /// Closure data storing captured variable values
 #[derive(Debug, Clone)]
 pub struct ClosureData {
@@ -122,6 +181,8 @@ pub struct CallFrame {
     pub this_func: Value,
     /// Index into closures array if this frame is executing a closure
     pub closure_idx: Option<usize>,
+    /// Whether this is a constructor call (new operator)
+    pub is_constructor: bool,
 }
 
 impl CallFrame {
@@ -143,6 +204,7 @@ impl CallFrame {
             this_val,
             this_func,
             closure_idx: None,
+            is_constructor: false,
         }
     }
 
@@ -165,6 +227,52 @@ impl CallFrame {
             this_val,
             this_func,
             closure_idx: Some(closure_idx),
+            is_constructor: false,
+        }
+    }
+
+    /// Create a call frame for a constructor
+    pub fn new_constructor(
+        bytecode: *const FunctionBytecode,
+        frame_ptr: usize,
+        arg_count: u16,
+        this_val: Value,
+        this_func: Value,
+    ) -> Self {
+        CallFrame {
+            bytecode,
+            pc: 0,
+            frame_ptr,
+            arg_count,
+            return_pc: usize::MAX,
+            prev_frame_ptr: 0,
+            this_val,
+            this_func,
+            closure_idx: None,
+            is_constructor: true,
+        }
+    }
+
+    /// Create a call frame for a closure used as constructor
+    pub fn new_closure_constructor(
+        bytecode: *const FunctionBytecode,
+        frame_ptr: usize,
+        arg_count: u16,
+        this_val: Value,
+        this_func: Value,
+        closure_idx: usize,
+    ) -> Self {
+        CallFrame {
+            bytecode,
+            pc: 0,
+            frame_ptr,
+            arg_count,
+            return_pc: usize::MAX,
+            prev_frame_ptr: 0,
+            this_val,
+            this_func,
+            closure_idx: Some(closure_idx),
+            is_constructor: true,
         }
     }
 }
@@ -242,6 +350,10 @@ pub struct Interpreter {
     objects: Vec<ObjectInstance>,
     /// For-in iterators created during execution
     for_in_iterators: Vec<ForInIterator>,
+    /// For-of iterators created during execution
+    for_of_iterators: Vec<ForOfIterator>,
+    /// Native function registry
+    native_functions: Vec<NativeFunction>,
 }
 
 impl Interpreter {
@@ -252,7 +364,7 @@ impl Interpreter {
 
     /// Create a new interpreter
     pub fn new() -> Self {
-        Interpreter {
+        let mut interp = Interpreter {
             stack: Stack::new(Self::DEFAULT_STACK_SIZE),
             call_stack: Vec::with_capacity(64),
             max_recursion: Self::DEFAULT_MAX_RECURSION,
@@ -262,12 +374,16 @@ impl Interpreter {
             arrays: Vec::new(),
             objects: Vec::new(),
             for_in_iterators: Vec::new(),
-        }
+            for_of_iterators: Vec::new(),
+            native_functions: Vec::new(),
+        };
+        interp.register_builtins();
+        interp
     }
 
     /// Create an interpreter with custom settings
     pub fn with_config(stack_size: usize, max_recursion: usize) -> Self {
-        Interpreter {
+        let mut interp = Interpreter {
             stack: Stack::new(stack_size),
             call_stack: Vec::with_capacity(64),
             max_recursion,
@@ -277,7 +393,11 @@ impl Interpreter {
             arrays: Vec::new(),
             objects: Vec::new(),
             for_in_iterators: Vec::new(),
-        }
+            for_of_iterators: Vec::new(),
+            native_functions: Vec::new(),
+        };
+        interp.register_builtins();
+        interp
     }
 
     /// Closure index marker (indices into closures vec are stored as negative values)
@@ -313,6 +433,20 @@ impl Interpreter {
         let idx = self.runtime_strings.len();
         self.runtime_strings.push(s);
         Value::string(Self::RUNTIME_STRING_OFFSET + idx as u16)
+    }
+
+    /// Get a string by its index (works for both compile-time and runtime strings)
+    /// Note: For compile-time strings, requires bytecode context which isn't always available.
+    /// This is primarily for runtime strings.
+    pub fn get_string_by_idx(&self, str_idx: u16) -> Option<&str> {
+        if str_idx >= Self::RUNTIME_STRING_OFFSET {
+            let runtime_idx = (str_idx - Self::RUNTIME_STRING_OFFSET) as usize;
+            self.runtime_strings.get(runtime_idx).map(|s| s.as_str())
+        } else {
+            // Compile-time string - we don't have bytecode context here
+            // This will be handled by the caller with bytecode access
+            None
+        }
     }
 
     /// Create a closure and return a Value that references it
@@ -1223,6 +1357,13 @@ impl Interpreter {
                     // Pop the function value
                     let func_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
 
+                    // Check if this is a native function call
+                    if let Some(native_idx) = func_val.to_native_func_idx() {
+                        let result = self.call_native_func(native_idx, Value::undefined(), &args)?;
+                        self.stack.push(result);
+                        continue;
+                    }
+
                     // Determine if this is a closure or a regular function
                     let (callee_bytecode, callee_closure_idx): (&FunctionBytecode, Option<usize>) =
                         if let Some(closure_idx) = func_val.to_closure_idx() {
@@ -1370,9 +1511,9 @@ impl Interpreter {
                         self.stack.push(Value::undefined());
                     }
 
-                    // Create frame with new object as 'this'
+                    // Create frame with new object as 'this' - marked as constructor call
                     let callee_frame = if let Some(closure_idx) = callee_closure_idx {
-                        CallFrame::new_closure(
+                        CallFrame::new_closure_constructor(
                             callee_bytecode as *const _,
                             callee_frame_ptr,
                             args.len().min(u16::MAX as usize) as u16,
@@ -1381,7 +1522,7 @@ impl Interpreter {
                             closure_idx,
                         )
                     } else {
-                        CallFrame::new(
+                        CallFrame::new_constructor(
                             callee_bytecode as *const _,
                             callee_frame_ptr,
                             args.len().min(u16::MAX as usize) as u16,
@@ -1392,8 +1533,107 @@ impl Interpreter {
                     self.call_stack.push(callee_frame);
 
                     // Continue execution in the new frame
-                    // When the constructor returns, the result will be handled specially
-                    // (we need to return 'this' if the return value isn't an object)
+                    // When the constructor returns, do_return handles returning 'this'
+                    // if the return value isn't an object
+                }
+
+                // CallMethod - method call: obj method args... -> ret
+                // Stack before: [obj, method, arg0, arg1, ...]
+                op if op == OpCode::CallMethod as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let argc = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Collect arguments (they were pushed in order)
+                    let mut args = Vec::with_capacity(argc);
+                    for _ in 0..argc {
+                        args.push(self.stack.pop().ok_or(InterpreterError::StackUnderflow)?);
+                    }
+                    args.reverse(); // Arguments were pushed left-to-right
+
+                    // Pop the method value
+                    let method_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Pop the object (this value)
+                    let this_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Check if this is a native function call
+                    if let Some(native_idx) = method_val.to_native_func_idx() {
+                        let result = self.call_native_func(native_idx, this_val, &args)?;
+                        self.stack.push(result);
+                        continue;
+                    }
+
+                    // Determine if this is a closure or a regular function
+                    let (callee_bytecode, callee_closure_idx): (&FunctionBytecode, Option<usize>) =
+                        if let Some(closure_idx) = method_val.to_closure_idx() {
+                            let closure = self.get_closure(closure_idx).ok_or_else(|| {
+                                InterpreterError::InternalError(format!(
+                                    "invalid closure index: {}",
+                                    closure_idx
+                                ))
+                            })?;
+                            (unsafe { &*closure.bytecode }, Some(closure_idx as usize))
+                        } else if let Some(ptr) = method_val.to_func_ptr() {
+                            (unsafe { &*ptr }, None)
+                        } else if let Some(idx) = method_val.to_func_idx() {
+                            let bc = bytecode
+                                .inner_functions
+                                .get(idx as usize)
+                                .ok_or_else(|| {
+                                    InterpreterError::InternalError(format!(
+                                        "invalid function index: {}",
+                                        idx
+                                    ))
+                                })?;
+                            (bc, None)
+                        } else {
+                            return Err(InterpreterError::TypeError("not a function".to_string()));
+                        };
+
+                    // Check recursion limit
+                    if self.call_stack.len() >= self.max_recursion {
+                        return Err(InterpreterError::InternalError(
+                            "maximum call stack size exceeded".to_string(),
+                        ));
+                    }
+
+                    let callee_frame_ptr = self.stack.len();
+
+                    // Push arguments (pad with undefined if needed)
+                    for i in 0..callee_bytecode.arg_count as usize {
+                        let arg = args.get(i).copied().unwrap_or(Value::undefined());
+                        self.stack.push(arg);
+                    }
+
+                    // Allocate space for locals (beyond arguments)
+                    let extra_locals = callee_bytecode.local_count.saturating_sub(callee_bytecode.arg_count);
+                    for _ in 0..extra_locals {
+                        self.stack.push(Value::undefined());
+                    }
+
+                    // Create frame with the object as 'this'
+                    let callee_frame = if let Some(closure_idx) = callee_closure_idx {
+                        CallFrame::new_closure(
+                            callee_bytecode as *const _,
+                            callee_frame_ptr,
+                            args.len().min(u16::MAX as usize) as u16,
+                            this_val,  // Pass the object as 'this'
+                            method_val,
+                            closure_idx,
+                        )
+                    } else {
+                        CallFrame::new(
+                            callee_bytecode as *const _,
+                            callee_frame_ptr,
+                            args.len().min(u16::MAX as usize) as u16,
+                            this_val,  // Pass the object as 'this'
+                            method_val,
+                        )
+                    };
+                    self.call_stack.push(callee_frame);
                 }
 
                 // TypeOf operator
@@ -1411,7 +1651,7 @@ impl Interpreter {
                         STR_NUMBER
                     } else if val.is_string() {
                         STR_STRING
-                    } else if val.is_func() || val.to_func_ptr().is_some() || val.is_closure() {
+                    } else if val.is_func() || val.to_func_ptr().is_some() || val.is_closure() || val.is_native_func() {
                         STR_FUNCTION
                     } else if val.is_object() || val.is_array() {
                         STR_OBJECT
@@ -1450,6 +1690,53 @@ impl Interpreter {
                     };
 
                     println!("{}", output);
+                }
+
+                // GetGlobal - look up global variable by name
+                op if op == OpCode::GetGlobal as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let name_idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]);
+                    frame.pc += 2;
+
+                    // Get the name from constant pool
+                    let name = bytecode
+                        .constants
+                        .get(name_idx as usize)
+                        .and_then(|v| {
+                            if v.is_string() {
+                                let str_idx = v.to_string_idx()?;
+                                bytecode.string_constants.get(str_idx as usize).map(|s| s.as_str())
+                            } else {
+                                None
+                            }
+                        })
+                        .ok_or_else(|| {
+                            InterpreterError::InternalError(format!(
+                                "invalid global name constant: {}",
+                                name_idx
+                            ))
+                        })?;
+
+                    // Look up the global by name
+                    // First check for special global values and builtin objects
+                    let val = match name {
+                        "undefined" => Some(Value::undefined()),
+                        "NaN" => Some(Value::int(0)), // TODO: proper NaN when floats are added
+                        "Infinity" => Some(Value::int(i32::MAX)), // TODO: proper infinity when floats are added
+                        "Math" => Some(Value::builtin_object(BUILTIN_MATH)), // Math object
+                        _ => self.get_native_func(name),
+                    };
+
+                    if let Some(v) = val {
+                        self.stack.push(v);
+                    } else {
+                        return Err(InterpreterError::ReferenceError(format!(
+                            "{} is not defined",
+                            name
+                        )));
+                    }
                 }
 
                 // Catch - set up exception handler
@@ -1631,14 +1918,60 @@ impl Interpreter {
                         InterpreterError::InternalError(format!("invalid string index: {}", str_idx))
                     })?;
 
-                    // Get property from object
-                    if let Some(obj_idx) = obj.to_object_idx() {
+                    // Check if this is a builtin object (Math, JSON, etc.)
+                    if let Some(builtin_idx) = obj.to_builtin_object_idx() {
+                        let val = self.get_builtin_property(builtin_idx, prop_name);
+                        self.stack.push(val);
+                    } else if obj.is_array() {
+                        // Array property access - check for Array.prototype methods
+                        let val = self.get_array_property(obj, prop_name);
+                        self.stack.push(val);
+                    } else if let Some(obj_idx) = obj.to_object_idx() {
+                        // Get property from regular object
                         let val = self.object_get_property(obj_idx, prop_name);
+                        self.stack.push(val);
+                    } else if obj.is_string() {
+                        // String property access - check for String.prototype methods
+                        let val = self.get_string_property(obj, prop_name);
                         self.stack.push(val);
                     } else {
                         // For non-objects, return undefined
                         self.stack.push(Value::undefined());
                     }
+                }
+
+                // GetField2 - get object property but keep object: obj -> obj value
+                // Used for method calls where we need the object as 'this'
+                op if op == OpCode::GetField2 as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let str_idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Peek at the object (don't pop - we need to keep it for 'this')
+                    let obj = self.stack.peek().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Get property name from string constants
+                    let prop_name = bytecode.string_constants.get(str_idx).ok_or_else(|| {
+                        InterpreterError::InternalError(format!("invalid string index: {}", str_idx))
+                    })?;
+
+                    // Get the property value (same logic as GetField)
+                    let val = if let Some(builtin_idx) = obj.to_builtin_object_idx() {
+                        self.get_builtin_property(builtin_idx, prop_name)
+                    } else if obj.is_array() {
+                        self.get_array_property(obj, prop_name)
+                    } else if let Some(obj_idx) = obj.to_object_idx() {
+                        self.object_get_property(obj_idx, prop_name)
+                    } else if obj.is_string() {
+                        self.get_string_property(obj, prop_name)
+                    } else {
+                        Value::undefined()
+                    };
+
+                    // Push the property value (object is still on stack below it)
+                    self.stack.push(val);
                 }
 
                 // PutField - set object property: obj val -> val
@@ -1894,6 +2227,61 @@ impl Interpreter {
                     }
                 }
 
+                // ForOfStart - Start for-of iteration: obj -> iter
+                op if op == OpCode::ForOfStart as u8 => {
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Create iterator based on value type
+                    let iter = if let Some(arr_idx) = obj.to_array_idx() {
+                        if let Some(arr) = self.get_array(arr_idx) {
+                            ForOfIterator::from_array(arr)
+                        } else {
+                            ForOfIterator { values: Vec::new(), index: 0 }
+                        }
+                    } else if let Some(obj_idx) = obj.to_object_idx() {
+                        if let Some(obj_instance) = self.get_object(obj_idx) {
+                            ForOfIterator::from_object(obj_instance)
+                        } else {
+                            ForOfIterator { values: Vec::new(), index: 0 }
+                        }
+                    } else {
+                        // For non-objects/arrays, create empty iterator
+                        ForOfIterator { values: Vec::new(), index: 0 }
+                    };
+
+                    // Store iterator and push reference
+                    let iter_idx = self.for_of_iterators.len();
+                    self.for_of_iterators.push(iter);
+                    self.stack.push(Value::for_of_iterator_idx(iter_idx as u32));
+                }
+
+                // ForOfNext - Get next for-of value: iter -> value done
+                op if op == OpCode::ForOfNext as u8 => {
+                    let iter_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    if let Some(iter_idx) = iter_val.to_for_of_iterator_idx() {
+                        if let Some(iter) = self.for_of_iterators.get_mut(iter_idx as usize) {
+                            if let Some(val) = iter.next() {
+                                // Push value and false (not done)
+                                self.stack.push(val);
+                                self.stack.push(Value::bool(false)); // not done
+                            } else {
+                                // Push undefined and true (done)
+                                self.stack.push(Value::undefined());
+                                self.stack.push(Value::bool(true)); // done
+                            }
+                        } else {
+                            // Invalid iterator, push done
+                            self.stack.push(Value::undefined());
+                            self.stack.push(Value::bool(true));
+                        }
+                    } else {
+                        // Not an iterator, push done
+                        self.stack.push(Value::undefined());
+                        self.stack.push(Value::bool(true));
+                    }
+                }
+
                 // Unknown opcode
                 op => {
                     return Err(InterpreterError::InvalidOpcode(op));
@@ -1916,13 +2304,20 @@ impl Interpreter {
         let local_count = unsafe { (*frame.bytecode).local_count } as usize;
         self.stack.drop_n(local_count);
 
+        // For constructor calls: if result is not an object, return 'this' instead
+        let final_result = if frame.is_constructor && !result.is_object() {
+            frame.this_val
+        } else {
+            result
+        };
+
         // If there are no more frames, this is the final result
         if self.call_stack.is_empty() {
-            return Ok(result);
+            return Ok(final_result);
         }
 
         // Otherwise, push the result for the caller and continue
-        self.stack.push(result);
+        self.stack.push(final_result);
 
         // Continue running the caller
         self.run()
@@ -2204,6 +2599,685 @@ impl Interpreter {
             )),
         }
     }
+
+    // =========================================================================
+    // Native function support
+    // =========================================================================
+
+    /// Register a native function and return its index
+    pub fn register_native(&mut self, name: &'static str, func: NativeFn, arity: u8) -> u32 {
+        let idx = self.native_functions.len() as u32;
+        self.native_functions.push(NativeFunction { name, func, arity });
+        idx
+    }
+
+    /// Get a native function value by name
+    pub fn get_native_func(&self, name: &str) -> Option<Value> {
+        for (idx, nf) in self.native_functions.iter().enumerate() {
+            if nf.name == name {
+                return Some(Value::native_func(idx as u32));
+            }
+        }
+        None
+    }
+
+    /// Get a property from an array (Array.prototype methods or length)
+    fn get_array_property(&self, arr: Value, prop_name: &str) -> Value {
+        match prop_name {
+            "length" => {
+                // Return the array length
+                if let Some(arr_idx) = arr.to_array_idx() {
+                    if let Some(arr_data) = self.arrays.get(arr_idx as usize) {
+                        return Value::int(arr_data.len() as i32);
+                    }
+                }
+                Value::undefined()
+            }
+            "push" => self.get_native_func("Array.prototype.push").unwrap_or(Value::undefined()),
+            "pop" => self.get_native_func("Array.prototype.pop").unwrap_or(Value::undefined()),
+            "shift" => self.get_native_func("Array.prototype.shift").unwrap_or(Value::undefined()),
+            "unshift" => self.get_native_func("Array.prototype.unshift").unwrap_or(Value::undefined()),
+            "indexOf" => self.get_native_func("Array.prototype.indexOf").unwrap_or(Value::undefined()),
+            "join" => self.get_native_func("Array.prototype.join").unwrap_or(Value::undefined()),
+            "reverse" => self.get_native_func("Array.prototype.reverse").unwrap_or(Value::undefined()),
+            "slice" => self.get_native_func("Array.prototype.slice").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Get a property from a string (String.prototype methods or length)
+    fn get_string_property(&self, str_val: Value, prop_name: &str) -> Value {
+        match prop_name {
+            "length" => {
+                // Get string length
+                if let Some(str_idx) = str_val.to_string_idx() {
+                    if let Some(s) = self.get_string_by_idx(str_idx) {
+                        return Value::int(s.len() as i32);
+                    }
+                }
+                Value::int(0)
+            }
+            "charAt" => self.get_native_func("String.prototype.charAt").unwrap_or(Value::undefined()),
+            "indexOf" => self.get_native_func("String.prototype.indexOf").unwrap_or(Value::undefined()),
+            "slice" => self.get_native_func("String.prototype.slice").unwrap_or(Value::undefined()),
+            "substring" => self.get_native_func("String.prototype.substring").unwrap_or(Value::undefined()),
+            "toUpperCase" => self.get_native_func("String.prototype.toUpperCase").unwrap_or(Value::undefined()),
+            "toLowerCase" => self.get_native_func("String.prototype.toLowerCase").unwrap_or(Value::undefined()),
+            "trim" => self.get_native_func("String.prototype.trim").unwrap_or(Value::undefined()),
+            "split" => self.get_native_func("String.prototype.split").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Get a property from a builtin object (Math, JSON, etc.)
+    fn get_builtin_property(&self, builtin_idx: u32, prop_name: &str) -> Value {
+        match builtin_idx {
+            BUILTIN_MATH => {
+                // Math object properties
+                match prop_name {
+                    "abs" => self.get_native_func("Math.abs").unwrap_or(Value::undefined()),
+                    "floor" => self.get_native_func("Math.floor").unwrap_or(Value::undefined()),
+                    "ceil" => self.get_native_func("Math.ceil").unwrap_or(Value::undefined()),
+                    "max" => self.get_native_func("Math.max").unwrap_or(Value::undefined()),
+                    "min" => self.get_native_func("Math.min").unwrap_or(Value::undefined()),
+                    "round" => self.get_native_func("Math.round").unwrap_or(Value::undefined()),
+                    "sqrt" => self.get_native_func("Math.sqrt").unwrap_or(Value::undefined()),
+                    "pow" => self.get_native_func("Math.pow").unwrap_or(Value::undefined()),
+                    "PI" => Value::int(3), // TODO: proper float value 3.14159...
+                    "E" => Value::int(2),  // TODO: proper float value 2.71828...
+                    _ => Value::undefined(),
+                }
+            }
+            BUILTIN_JSON => {
+                // JSON object properties (for future use)
+                Value::undefined()
+            }
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Call a native function by index
+    fn call_native_func(&mut self, idx: u32, this: Value, args: &[Value]) -> InterpreterResult<Value> {
+        let func = self.native_functions.get(idx as usize)
+            .ok_or_else(|| InterpreterError::InternalError(format!("invalid native function index: {}", idx)))?
+            .clone();
+
+        (func.func)(self, this, args)
+            .map_err(|e| InterpreterError::TypeError(e))
+    }
+
+    /// Register built-in native functions
+    fn register_builtins(&mut self) {
+        // Array methods
+        self.register_native("Array.prototype.push", native_array_push, 0);
+        self.register_native("Array.prototype.pop", native_array_pop, 0);
+        self.register_native("Array.prototype.length", native_array_length, 0);
+        self.register_native("Array.prototype.shift", native_array_shift, 0);
+        self.register_native("Array.prototype.unshift", native_array_unshift, 0);
+        self.register_native("Array.prototype.indexOf", native_array_index_of, 1);
+        self.register_native("Array.prototype.join", native_array_join, 0);
+        self.register_native("Array.prototype.reverse", native_array_reverse, 0);
+        self.register_native("Array.prototype.slice", native_array_slice, 0);
+
+        // Global functions
+        self.register_native("parseInt", native_parse_int, 1);
+        self.register_native("isNaN", native_is_nan, 1);
+
+        // Math functions
+        self.register_native("Math.abs", native_math_abs, 1);
+        self.register_native("Math.floor", native_math_floor, 1);
+        self.register_native("Math.ceil", native_math_ceil, 1);
+        self.register_native("Math.round", native_math_round, 1);
+        self.register_native("Math.sqrt", native_math_sqrt, 1);
+        self.register_native("Math.pow", native_math_pow, 2);
+        self.register_native("Math.max", native_math_max, 0);
+        self.register_native("Math.min", native_math_min, 0);
+
+        // String methods
+        self.register_native("String.prototype.charAt", native_string_char_at, 1);
+        self.register_native("String.prototype.indexOf", native_string_index_of, 1);
+        self.register_native("String.prototype.slice", native_string_slice, 0);
+        self.register_native("String.prototype.substring", native_string_substring, 0);
+        self.register_native("String.prototype.toUpperCase", native_string_to_upper_case, 0);
+        self.register_native("String.prototype.toLowerCase", native_string_to_lower_case, 0);
+        self.register_native("String.prototype.trim", native_string_trim, 0);
+        self.register_native("String.prototype.split", native_string_split, 0);
+    }
+}
+
+// =============================================================================
+// Native function implementations
+// =============================================================================
+
+/// Array.prototype.push - add elements to end of array
+fn native_array_push(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "push called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        for arg in args {
+            arr.push(*arg);
+        }
+        Ok(Value::int(arr.len() as i32))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.pop - remove and return last element
+fn native_array_pop(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "pop called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        Ok(arr.pop().unwrap_or(Value::undefined()))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.length - get array length
+fn native_array_length(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "length called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        Ok(Value::int(arr.len() as i32))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.shift - remove and return first element
+fn native_array_shift(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "shift called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        if arr.is_empty() {
+            Ok(Value::undefined())
+        } else {
+            Ok(arr.remove(0))
+        }
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.unshift - add elements to beginning, return new length
+fn native_array_unshift(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "unshift called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        // Insert arguments at beginning in order
+        for (i, arg) in args.iter().enumerate() {
+            arr.insert(i, *arg);
+        }
+        Ok(Value::int(arr.len() as i32))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.indexOf - find index of element
+fn native_array_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "indexOf called on non-array".to_string())?;
+
+    let search_val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        for (i, val) in arr.iter().enumerate() {
+            // Simple equality check (comparing raw values)
+            if val.0 == search_val.0 {
+                return Ok(Value::int(i as i32));
+            }
+        }
+        Ok(Value::int(-1)) // Not found
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.join - join elements with separator
+fn native_array_join(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "join called on non-array".to_string())?;
+
+    // Get separator (default is ",")
+    let separator = if let Some(sep_val) = args.get(0) {
+        if let Some(str_idx) = sep_val.to_string_idx() {
+            // We'd need access to string table here, for now use ","
+            let _ = str_idx;
+            ","
+        } else {
+            ","
+        }
+    } else {
+        ","
+    };
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        let parts: Vec<String> = arr.iter().map(|v| {
+            if let Some(n) = v.to_i32() {
+                n.to_string()
+            } else if v.is_undefined() {
+                String::new()
+            } else if v.is_null() {
+                String::new()
+            } else if let Some(b) = v.to_bool() {
+                b.to_string()
+            } else {
+                String::new()
+            }
+        }).collect();
+
+        let result = parts.join(separator);
+
+        // Store result string and return string value
+        let str_idx = interp.runtime_strings.len() as u16;
+        interp.runtime_strings.push(result);
+        Ok(Value::string(str_idx))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.reverse - reverse array in place
+fn native_array_reverse(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "reverse called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        arr.reverse();
+        Ok(this) // Return the array itself
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.slice - return shallow copy of portion of array
+fn native_array_slice(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "slice called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        let len = arr.len() as i32;
+
+        // Get start index (default 0)
+        let mut start = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+        if start < 0 {
+            start = (len + start).max(0);
+        }
+        let start = start.min(len) as usize;
+
+        // Get end index (default length)
+        let mut end = args.get(1).and_then(|v| v.to_i32()).unwrap_or(len);
+        if end < 0 {
+            end = (len + end).max(0);
+        }
+        let end = end.min(len) as usize;
+
+        // Create new array with slice
+        let slice: Vec<Value> = if start < end {
+            arr[start..end].to_vec()
+        } else {
+            Vec::new()
+        };
+
+        // Store the new array
+        let new_idx = interp.arrays.len() as u32;
+        interp.arrays.push(slice);
+        Ok(Value::array_idx(new_idx))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// parseInt - parse string to integer
+fn native_parse_int(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        Ok(Value::int(n))
+    } else {
+        // Return NaN for non-parseable values (use 0 for now since we don't have NaN)
+        Ok(Value::int(0))
+    }
+}
+
+/// isNaN - check if value is NaN
+fn native_is_nan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // We don't have real NaN support yet, so just check if it's a number
+    if val.to_i32().is_some() {
+        Ok(Value::bool(false))
+    } else {
+        Ok(Value::bool(true))
+    }
+}
+
+/// Math.abs - absolute value
+fn native_math_abs(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        Ok(Value::int(n.abs()))
+    } else {
+        Err("Math.abs requires a number".to_string())
+    }
+}
+
+/// Math.floor - floor value
+fn native_math_floor(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        Ok(Value::int(n)) // Already an integer
+    } else {
+        Err("Math.floor requires a number".to_string())
+    }
+}
+
+/// Math.ceil - ceiling value
+fn native_math_ceil(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        Ok(Value::int(n)) // Already an integer
+    } else {
+        Err("Math.ceil requires a number".to_string())
+    }
+}
+
+/// Math.max - maximum of values
+fn native_math_max(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Ok(Value::int(i32::MIN)); // -Infinity for no args
+    }
+
+    let mut max = i32::MIN;
+    for arg in args {
+        if let Some(n) = arg.to_i32() {
+            if n > max {
+                max = n;
+            }
+        } else {
+            return Err("Math.max requires numbers".to_string());
+        }
+    }
+    Ok(Value::int(max))
+}
+
+/// Math.min - minimum of values
+fn native_math_min(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Ok(Value::int(i32::MAX)); // Infinity for no args
+    }
+
+    let mut min = i32::MAX;
+    for arg in args {
+        if let Some(n) = arg.to_i32() {
+            if n < min {
+                min = n;
+            }
+        } else {
+            return Err("Math.min requires numbers".to_string());
+        }
+    }
+    Ok(Value::int(min))
+}
+
+/// Math.round - round to nearest integer
+fn native_math_round(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        Ok(Value::int(n)) // Already an integer
+    } else {
+        Err("Math.round requires a number".to_string())
+    }
+}
+
+/// Math.sqrt - square root (integer approximation for now)
+fn native_math_sqrt(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        if n < 0 {
+            Ok(Value::int(0)) // NaN for negative (return 0 for now)
+        } else {
+            // Integer square root
+            Ok(Value::int((n as f64).sqrt() as i32))
+        }
+    } else {
+        Err("Math.sqrt requires a number".to_string())
+    }
+}
+
+/// Math.pow - power function (integer only for now)
+fn native_math_pow(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let base = args.get(0).copied().unwrap_or(Value::undefined());
+    let exp = args.get(1).copied().unwrap_or(Value::undefined());
+
+    if let (Some(b), Some(e)) = (base.to_i32(), exp.to_i32()) {
+        if e < 0 {
+            Ok(Value::int(0)) // Integer division for negative exponents
+        } else if e == 0 {
+            Ok(Value::int(1))
+        } else {
+            let result = (b as i64).pow(e as u32);
+            Ok(Value::int(result.min(i32::MAX as i64).max(i32::MIN as i64) as i32))
+        }
+    } else {
+        Err("Math.pow requires numbers".to_string())
+    }
+}
+
+// =============================================================================
+// String.prototype methods
+// =============================================================================
+
+/// String.prototype.charAt - get character at index
+fn native_string_char_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "charAt called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let index = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as usize;
+
+    if index < s.len() {
+        // Get the character at index (for ASCII strings)
+        let ch = s.chars().nth(index).map(|c| c.to_string()).unwrap_or_default();
+        let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(ch);
+        Ok(Value::string(new_idx))
+    } else {
+        // Return empty string for out of bounds
+        let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(String::new());
+        Ok(Value::string(new_idx))
+    }
+}
+
+/// String.prototype.indexOf - find substring
+fn native_string_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "indexOf called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    // Get search string
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else if let Some(n) = search_val.to_i32() {
+            n.to_string()
+        } else {
+            return Ok(Value::int(-1));
+        }
+    } else {
+        return Ok(Value::int(-1));
+    };
+
+    // Find the substring
+    match s.find(&search) {
+        Some(pos) => Ok(Value::int(pos as i32)),
+        None => Ok(Value::int(-1)),
+    }
+}
+
+/// String.prototype.slice - extract portion of string
+fn native_string_slice(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "slice called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let len = s.len() as i32;
+
+    // Get start index
+    let mut start = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if start < 0 {
+        start = (len + start).max(0);
+    }
+    let start = start.min(len) as usize;
+
+    // Get end index
+    let mut end = args.get(1).and_then(|v| v.to_i32()).unwrap_or(len);
+    if end < 0 {
+        end = (len + end).max(0);
+    }
+    let end = end.min(len) as usize;
+
+    // Extract slice
+    let result = if start < end {
+        s[start..end].to_string()
+    } else {
+        String::new()
+    };
+
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.substring - extract portion of string (similar to slice but different negative handling)
+fn native_string_substring(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "substring called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let len = s.len() as i32;
+
+    // Get start index (negative becomes 0)
+    let start = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0).max(0).min(len) as usize;
+
+    // Get end index (negative becomes 0)
+    let end = args.get(1).and_then(|v| v.to_i32()).unwrap_or(len).max(0).min(len) as usize;
+
+    // Swap if start > end
+    let (start, end) = if start > end { (end, start) } else { (start, end) };
+
+    let result = s[start..end].to_string();
+
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.toUpperCase - convert to uppercase
+fn native_string_to_upper_case(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "toUpperCase called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let result = s.to_uppercase();
+
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.toLowerCase - convert to lowercase
+fn native_string_to_lower_case(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "toLowerCase called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let result = s.to_lowercase();
+
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.trim - remove whitespace from both ends
+fn native_string_trim(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "trim called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let result = s.trim().to_string();
+
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.split - split string into array
+fn native_string_split(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "split called on non-string".to_string())?;
+
+    // Clone the string to avoid borrow issues
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    // Get separator
+    let separator = if let Some(sep_val) = args.get(0) {
+        if let Some(sep_idx) = sep_val.to_string_idx() {
+            interp.get_string_by_idx(sep_idx).unwrap_or(",").to_string()
+        } else {
+            ",".to_string()
+        }
+    } else {
+        // No separator - return array with whole string
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(s);
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(vec![Value::string(new_str_idx)]);
+        return Ok(Value::array_idx(arr_idx));
+    };
+
+    // Split and create array of strings
+    let string_parts: Vec<String> = s.split(&separator).map(|p| p.to_string()).collect();
+    let mut parts: Vec<Value> = Vec::with_capacity(string_parts.len());
+    for part in string_parts {
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(part);
+        parts.push(Value::string(new_str_idx));
+    }
+
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(parts);
+    Ok(Value::array_idx(arr_idx))
 }
 
 impl Default for Interpreter {

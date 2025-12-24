@@ -352,11 +352,13 @@ pub enum OpCode {
     // Built-in operations
     /// Print value to stdout (pops value, pushes undefined)
     Print,
+    /// Get global variable by name (16-bit constant index)
+    GetGlobal,
 }
 
 impl OpCode {
     /// Total number of opcodes
-    pub const COUNT: usize = OpCode::Print as usize + 1;
+    pub const COUNT: usize = OpCode::GetGlobal as usize + 1;
 }
 
 /// Opcode metadata
@@ -504,8 +506,8 @@ pub static OPCODE_INFO: [OpCodeInfo; OpCode::COUNT] = [
     OpCodeInfo::new(1, 1, 2, OpFormat::None),
     // ForOfStart
     OpCodeInfo::new(1, 1, 1, OpFormat::None),
-    // ForOfNext
-    OpCodeInfo::new(1, 1, 3, OpFormat::None),
+    // ForOfNext - pops 1 (iter), pushes 2 (value, done)
+    OpCodeInfo::new(1, 1, 2, OpFormat::None),
     // Neg
     OpCodeInfo::new(1, 1, 1, OpFormat::None),
     // Plus
@@ -638,6 +640,8 @@ pub static OPCODE_INFO: [OpCodeInfo; OpCode::COUNT] = [
     OpCodeInfo::new(1, 1, 0, OpFormat::NoneArg),
     // Print
     OpCodeInfo::new(1, 1, 0, OpFormat::None),
+    // GetGlobal - 3 bytes (opcode + 16-bit constant index), pops 0, pushes 1
+    OpCodeInfo::new(3, 0, 1, OpFormat::Const16),
 ];
 
 #[cfg(test)]

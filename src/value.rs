@@ -55,9 +55,21 @@ pub const ARRAY_INDEX_MARKER: i32 = 1 << 26;
 /// When bit 25 is set, it's an object index
 pub const OBJECT_INDEX_MARKER: i32 = 1 << 25;
 
-/// Marker bit to distinguish iterators from closures, arrays, and objects in the CatchOffset tag
-/// When bit 24 is set, it's an iterator index
+/// Marker bit to distinguish for-in iterators from closures, arrays, and objects in the CatchOffset tag
+/// When bit 24 is set, it's a for-in iterator index
 pub const ITERATOR_INDEX_MARKER: i32 = 1 << 24;
+
+/// Marker bit to distinguish for-of iterators from other types in the CatchOffset tag
+/// When bit 23 is set, it's a for-of iterator index
+pub const FOR_OF_ITERATOR_INDEX_MARKER: i32 = 1 << 23;
+
+/// Marker bit to distinguish native functions from other types in the CatchOffset tag
+/// When bit 22 is set, it's a native function index
+pub const NATIVE_FUNC_MARKER: i32 = 1 << 22;
+
+/// Marker bit for built-in global objects (Math, JSON, etc.)
+/// When bit 21 is set, it's a builtin object index (0=Math, 1=JSON, etc.)
+pub const BUILTIN_OBJECT_MARKER: i32 = 1 << 21;
 
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -262,13 +274,41 @@ impl Value {
         ))
     }
 
-    /// Create an iterator value (index into interpreter's for_in_iterators)
+    /// Create a for-in iterator value (index into interpreter's for_in_iterators)
     /// Uses bit 24 marker to distinguish from closures, arrays, and objects
     #[inline]
     pub const fn iterator_idx(idx: u32) -> Self {
         Value(RawValue::make_special(
             SpecialTag::CatchOffset as u8,
             (idx as i32) | ITERATOR_INDEX_MARKER,
+        ))
+    }
+
+    /// Create a for-of iterator value (index into interpreter's for_of_iterators)
+    /// Uses bit 23 marker to distinguish from other types
+    #[inline]
+    pub const fn for_of_iterator_idx(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | FOR_OF_ITERATOR_INDEX_MARKER,
+        ))
+    }
+
+    /// Create a native function value (index into native function table)
+    /// Uses bit 22 marker to distinguish from other types
+    #[inline]
+    pub const fn native_func(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | NATIVE_FUNC_MARKER,
+        ))
+    }
+
+    /// Create a builtin object value (Math=0, JSON=1, etc.)
+    pub const fn builtin_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | BUILTIN_OBJECT_MARKER,
         ))
     }
 
@@ -340,7 +380,12 @@ impl Value {
     pub const fn is_closure(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
             && (self.0.get_special_value()
-                & (ARRAY_INDEX_MARKER | OBJECT_INDEX_MARKER | ITERATOR_INDEX_MARKER))
+                & (ARRAY_INDEX_MARKER
+                    | OBJECT_INDEX_MARKER
+                    | ITERATOR_INDEX_MARKER
+                    | FOR_OF_ITERATOR_INDEX_MARKER
+                    | NATIVE_FUNC_MARKER
+                    | BUILTIN_OBJECT_MARKER))
                 == 0
     }
 
@@ -360,12 +405,35 @@ impl Value {
             && (self.0.get_special_value() & OBJECT_INDEX_MARKER) != 0
     }
 
-    /// Check if this is an iterator
-    /// Iterators use CatchOffset tag with bit 24 set
+    /// Check if this is a for-in iterator
+    /// For-in iterators use CatchOffset tag with bit 24 set
     #[inline]
     pub const fn is_iterator(self) -> bool {
         self.0.get_special_tag() == SpecialTag::CatchOffset as u8
             && (self.0.get_special_value() & ITERATOR_INDEX_MARKER) != 0
+    }
+
+    /// Check if this is a for-of iterator
+    /// For-of iterators use CatchOffset tag with bit 23 set
+    #[inline]
+    pub const fn is_for_of_iterator(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & FOR_OF_ITERATOR_INDEX_MARKER) != 0
+    }
+
+    /// Check if this is a native function
+    /// Native functions use CatchOffset tag with bit 22 set
+    #[inline]
+    pub const fn is_native_func(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & NATIVE_FUNC_MARKER) != 0
+    }
+
+    /// Check if this is a builtin object (Math, JSON, etc.)
+    #[inline]
+    pub const fn is_builtin_object(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & BUILTIN_OBJECT_MARKER) != 0
     }
 
     // Value extraction
@@ -452,12 +520,44 @@ impl Value {
         }
     }
 
-    /// Get iterator index, returns None if not an iterator
+    /// Get for-in iterator index, returns None if not a for-in iterator
     #[inline]
     pub const fn to_iterator_idx(self) -> Option<u32> {
         if self.is_iterator() {
             // Mask off the iterator marker bit to get the actual index
             Some((self.0.get_special_value() & !ITERATOR_INDEX_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Get for-of iterator index, returns None if not a for-of iterator
+    #[inline]
+    pub const fn to_for_of_iterator_idx(self) -> Option<u32> {
+        if self.is_for_of_iterator() {
+            // Mask off the for-of iterator marker bit to get the actual index
+            Some((self.0.get_special_value() & !FOR_OF_ITERATOR_INDEX_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Get native function index, returns None if not a native function
+    #[inline]
+    pub const fn to_native_func_idx(self) -> Option<u32> {
+        if self.is_native_func() {
+            // Mask off the native function marker bit to get the actual index
+            Some((self.0.get_special_value() & !NATIVE_FUNC_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Get builtin object index, returns None if not a builtin object
+    #[inline]
+    pub const fn to_builtin_object_idx(self) -> Option<u32> {
+        if self.is_builtin_object() {
+            Some((self.0.get_special_value() & !BUILTIN_OBJECT_MARKER) as u32)
         } else {
             None
         }

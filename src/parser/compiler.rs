@@ -382,6 +382,16 @@ impl<'a> Compiler<'a> {
         self.emit_u16(index as u16);
     }
 
+    /// Emit get global instruction for builtin functions
+    fn emit_get_global(&mut self, name: &str) {
+        // Add the name as a string constant
+        let str_idx = self.string_constants.len() as u16;
+        self.string_constants.push(name.to_string());
+        let const_idx = self.add_constant(Value::string(str_idx));
+        self.emit_op(OpCode::GetGlobal);
+        self.emit_u16(const_idx);
+    }
+
     /// Emit a jump instruction and return the patch location
     fn emit_jump(&mut self, op: OpCode) -> JumpPatch {
         self.emit_op(op);
@@ -900,6 +910,11 @@ impl<'a> Compiler<'a> {
                     return self.for_in_statement_rest(saved_name);
                 }
 
+                if self.match_token(&Token::Of) {
+                    // This is a for-of loop
+                    return self.for_of_statement_rest(saved_name);
+                }
+
                 // Not a for-in loop, restore and continue as C-style for
                 // We already consumed var/let and identifier, need to handle initializer
                 // Declare local first to get the index
@@ -980,6 +995,69 @@ impl<'a> Compiler<'a> {
         self.patch_jump(exit_jump);
 
         // Pop remaining key value (undefined from done iteration)
+        self.emit_op(OpCode::Drop);
+
+        // Pop loop context and patch break jumps
+        let loop_ctx = self.loop_stack.pop().unwrap();
+        for patch in loop_ctx.break_patches {
+            self.patch_jump(patch);
+        }
+
+        self.end_scope();
+
+        Ok(())
+    }
+
+    /// Parse rest of for-of statement after "for (var/let name of"
+    fn for_of_statement_rest(&mut self, var_name: String) -> Result<(), CompileError> {
+        // Parse the iterable to iterate over
+        self.expression()?;
+        self.expect(Token::RParen)?;
+
+        // Create iterator from iterable - ForOfStart converts to iterator index
+        self.emit_op(OpCode::ForOfStart);
+
+        // Declare a hidden local to store the iterator index
+        let iter_slot = self.declare_local("\x00iter")?;
+        self.emit_set_local(iter_slot);
+
+        // Declare the loop variable
+        self.emit_op(OpCode::Undefined);
+        let var_slot = self.declare_local(&var_name)?;
+        self.emit_set_local(var_slot);
+
+        // Loop start - get next value
+        let loop_start = self.current_offset();
+
+        // Push loop context for break/continue
+        self.loop_stack.push(LoopContext {
+            continue_target: loop_start,
+            break_patches: Vec::new(),
+            scope_depth: self.scope_depth,
+        });
+
+        // Get iterator from hidden local
+        self.emit_get_local(iter_slot);
+
+        // ForOfNext: iter -> value done
+        self.emit_op(OpCode::ForOfNext);
+
+        // Check if done (pops done flag)
+        let exit_jump = self.emit_jump(OpCode::IfTrue);
+
+        // Store value to loop variable (PutLoc pops the value)
+        self.emit_set_local(var_slot);
+
+        // Body
+        self.statement()?;
+
+        // Loop back
+        self.emit_loop(loop_start);
+
+        // Exit point
+        self.patch_jump(exit_jump);
+
+        // Pop remaining value (undefined from done iteration)
         self.emit_op(OpCode::Drop);
 
         // Pop loop context and patch break jumps
@@ -1462,12 +1540,8 @@ impl<'a> Compiler<'a> {
                 } else if let Some(idx) = self.resolve_capture(&name) {
                     self.emit_get_capture(idx);
                 } else {
-                    // Global variable - emit as property access on global object
-                    // For now, emit error for undefined variable
-                    return Err(CompileError::SyntaxError(format!(
-                        "Undefined variable '{}'",
-                        name
-                    )));
+                    // Try as a global (builtin function)
+                    self.emit_get_global(&name);
                 }
             }
 
@@ -1637,7 +1711,7 @@ impl<'a> Compiler<'a> {
                     }
                 }
 
-                // Member access: a.b or a.b = c
+                // Member access: a.b or a.b = c or a.b()
                 Token::Dot => {
                     self.advance();
                     if let Token::Ident(name) = &self.current_token {
@@ -1654,6 +1728,16 @@ impl<'a> Compiler<'a> {
                             self.expression()?;
                             self.emit_op(OpCode::PutField);
                             self.emit_u16(str_idx);
+                        } else if self.check(&Token::LParen) {
+                            // Method call: obj.method(args)
+                            // Use GetField2 to keep obj on stack, then CallMethod
+                            self.emit_op(OpCode::GetField2);
+                            self.emit_u16(str_idx);
+                            // Now stack is: [obj, method]
+                            self.advance(); // consume LParen
+                            let arg_count = self.argument_list()?;
+                            self.emit_op(OpCode::CallMethod);
+                            self.emit_u16(arg_count);
                         } else {
                             // obj.prop
                             self.emit_op(OpCode::GetField);
@@ -1684,16 +1768,14 @@ impl<'a> Compiler<'a> {
             Token::Ident(name) => {
                 let name = name.clone();
                 self.advance();
-                // Resolve as local or capture
+                // Resolve as local, capture, or global
                 if let Some(idx) = self.resolve_local(&name) {
                     self.emit_get_local(idx);
                 } else if let Some(idx) = self.resolve_capture(&name) {
                     self.emit_get_capture(idx);
                 } else {
-                    return Err(CompileError::SyntaxError(format!(
-                        "Undefined variable '{}'",
-                        name
-                    )));
+                    // Try as a global (builtin function)
+                    self.emit_get_global(&name);
                 }
             }
             Token::LParen => {
@@ -1749,16 +1831,14 @@ impl<'a> Compiler<'a> {
                 let name = name.clone();
                 self.advance();
 
-                // Resolve the variable
+                // Resolve the variable as local, capture, or global
                 if let Some(idx) = self.resolve_local(&name) {
                     self.emit_get_local(idx);
                 } else if let Some(idx) = self.resolve_capture(&name) {
                     self.emit_get_capture(idx);
                 } else {
-                    return Err(CompileError::SyntaxError(format!(
-                        "Undefined variable '{}'",
-                        name
-                    )));
+                    // Try as a global (builtin function)
+                    self.emit_get_global(&name);
                 }
             }
             Token::LParen => {

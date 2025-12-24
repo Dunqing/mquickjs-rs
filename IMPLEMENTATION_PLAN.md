@@ -73,13 +73,13 @@
 
 - [ ] 5.1 Implement `Object` constructor and prototype
 - [ ] 5.2 Implement `Function` prototype
-- [ ] 5.3 Implement `Array` constructor and methods
-- [ ] 5.4 Implement `String` constructor and methods
+- [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length)
+- [x] 5.4 Implement `String` constructor and methods (length, charAt, indexOf, slice, substring, toUpperCase, toLowerCase, trim, split)
 - [ ] 5.5 Implement `Number` constructor and methods
 - [ ] 5.6 Implement `Boolean` constructor
-- [ ] 5.7 Implement global functions
+- [x] 5.7 Implement global functions (partial: parseInt, isNaN)
 
-**Status**: Not Started
+**Status**: In Progress (native function infrastructure complete)
 
 ---
 
@@ -87,13 +87,13 @@
 **Goal**: Complete built-in library
 
 - [ ] 6.1 Implement `Error` hierarchy
-- [ ] 6.2 Implement `Math` object
+- [x] 6.2 Implement `Math` object (partial: abs, floor, ceil, round, sqrt, pow, max, min)
 - [ ] 6.3 Implement `JSON` object
 - [ ] 6.4 Implement `RegExp` object
 - [ ] 6.5 Implement `TypedArray` objects
 - [ ] 6.6 Implement `Date.now()`
 
-**Status**: Not Started
+**Status**: In Progress (Math object complete)
 
 ---
 
@@ -101,7 +101,7 @@
 **Goal**: Complete language features
 
 - [x] 7.1 Implement `for-in` iteration
-- [ ] 7.2 Implement `for-of` iteration
+- [x] 7.2 Implement `for-of` iteration
 - [x] 7.3 Implement `try-catch-finally`
 - [x] 7.4 Implement closure variable capture
 - [x] 7.5 Implement array literals and operations
@@ -109,7 +109,7 @@
 - [x] 7.7 Implement `delete` and `in` operators
 - [x] 7.8 Implement `instanceof`
 
-**Status**: In Progress (closures, try-catch-finally, arrays, objects, new, in, delete, instanceof, for-in complete)
+**Status**: Complete
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 7.1 Complete (for-in iteration added)
+**Last Updated**: Stage 5 In Progress (Array methods complete)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 188 passing
+**Test Count**: 227 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -239,4 +239,73 @@
 - Iterates over object property names or array indices
 - Supports break and continue in for-in loops
 
-**Next Action**: Continue Stage 7 (for-of) or begin Stage 5 (Core Builtins)
+**Stage 7.2 For-Of Features**:
+- ForOfIterator struct stores values and iteration position
+- Iterator index stored in hidden local variable (like for-in)
+- ForOfStart opcode creates iterator from object/array
+- ForOfNext opcode returns next value and done flag
+- Iterates over array elements or object property values
+- Supports break and continue in for-of loops
+- Token::Of keyword added to lexer
+
+**Constructor Return Fix**:
+- Added is_constructor flag to CallFrame
+- CallConstructor now uses new_constructor/new_closure_constructor frame creators
+- do_return automatically returns 'this' if constructor doesn't return an object
+- Enables standard JavaScript constructor behavior (implicit this return)
+
+**Stage 5.7 Native Function Features**:
+- Native function type (`NativeFn`) and registry (`NativeFunction` struct)
+- `native_functions: Vec<NativeFunction>` registry in Interpreter
+- `register_native()` method for adding native functions
+- `get_native_func()` method for looking up functions by name
+- `call_native_func()` method for calling native functions
+- Native function support in Call opcode handler
+- `GetGlobal` opcode for looking up global variables/functions
+- Global value handling (undefined, NaN, Infinity)
+- Initial native functions implemented:
+  - `parseInt` - parse integer from value
+  - `isNaN` - check if value is not a number
+- Compiler emits `GetGlobal` for unresolved identifiers
+
+**Stage 6.2 Math Object Features**:
+- BUILTIN_OBJECT_MARKER for encoding builtin objects in Value
+- Value::builtin_object() constructor and to_builtin_object_idx() extractor
+- BUILTIN_MATH constant for Math object index
+- GetGlobal handler returns Math builtin object for "Math" name
+- GetField handler checks for builtin objects and dispatches to get_builtin_property()
+- Math methods implemented: abs, floor, ceil, round, sqrt, pow, max, min
+- 6 new Math object tests
+
+**Stage 5.3 Array Method Features**:
+- GetField2 opcode keeps object on stack for method calls
+- CallMethod opcode passes object as 'this' to method
+- Compiler detects method call pattern (obj.method()) and emits GetField2+CallMethod
+- get_array_property() dispatches to Array.prototype methods
+- Array.prototype.push() - add elements, return new length
+- Array.prototype.pop() - remove and return last element
+- Array.prototype.shift() - remove and return first element
+- Array.prototype.unshift() - add to front, return new length
+- Array.prototype.indexOf() - find element, return index or -1
+- Array.prototype.join() - join elements with separator
+- Array.prototype.reverse() - reverse array in place
+- Array.prototype.slice() - return shallow copy of portion
+- arr.length - property returns array length
+- 13 array method tests
+
+**Stage 5.4 String Method Features**:
+- get_string_by_idx() helper for string lookup
+- get_string_property() dispatches to String.prototype methods
+- String.prototype.length - returns string length
+- String.prototype.charAt(index) - get character at position
+- String.prototype.indexOf(search) - find substring position
+- String.prototype.slice(start, end) - extract portion with negative index support
+- String.prototype.substring(start, end) - extract portion (swaps if start > end)
+- String.prototype.toUpperCase() - convert to uppercase
+- String.prototype.toLowerCase() - convert to lowercase
+- String.prototype.trim() - remove whitespace from both ends
+- String.prototype.split(separator) - split into array
+- Note: Methods work on runtime strings (from concatenation); compile-time literal support pending
+- 11 String method tests
+
+**Next Action**: Implement Number/Boolean constructors or continue with other builtins
