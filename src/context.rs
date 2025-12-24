@@ -840,4 +840,122 @@ mod tests {
         assert!(result.is_string());
         assert_eq!(result.to_string_idx(), Some(STR_FUNCTION));
     }
+
+    #[test]
+    fn test_try_catch_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Basic try-catch that catches an exception
+        let result = ctx.eval("
+            var result = 0;
+            try {
+                throw 42;
+            } catch (e) {
+                result = e;
+            }
+            return result;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_try_catch_no_exception() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Try block completes normally, catch is skipped
+        let result = ctx.eval("
+            var result = 0;
+            try {
+                result = 10;
+            } catch (e) {
+                result = 99;
+            }
+            return result;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10));
+    }
+
+    #[test]
+    fn test_try_catch_with_finally() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Finally always executes
+        let result = ctx.eval("
+            var result = 0;
+            try {
+                result = 1;
+            } catch (e) {
+                result = 2;
+            } finally {
+                result = result + 10;
+            }
+            return result;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(11)); // 1 + 10
+    }
+
+    #[test]
+    fn test_try_catch_exception_with_finally() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Exception caught, then finally executes
+        let result = ctx.eval("
+            var result = 0;
+            try {
+                throw 5;
+            } catch (e) {
+                result = e;
+            } finally {
+                result = result + 100;
+            }
+            return result;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(105)); // 5 + 100
+    }
+
+    #[test]
+    fn test_throw_statement() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Throw and catch a value
+        let result = ctx.eval("
+            function mayThrow(x) {
+                if (x < 0) {
+                    throw x;
+                }
+                return x * 2;
+            }
+
+            var result = 0;
+            try {
+                result = mayThrow(-5);
+            } catch (e) {
+                result = e + 100;
+            }
+            return result;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(95)); // -5 + 100
+    }
+
+    #[test]
+    fn test_nested_try_catch() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Nested try-catch
+        let result = ctx.eval("
+            var result = 0;
+            try {
+                try {
+                    throw 1;
+                } catch (inner) {
+                    result = inner + 10;
+                    throw result;
+                }
+            } catch (outer) {
+                result = outer + 100;
+            }
+            return result;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(111)); // (1 + 10) + 100
+    }
 }

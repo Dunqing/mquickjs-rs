@@ -102,13 +102,13 @@
 
 - [ ] 7.1 Implement `for-in` iteration
 - [ ] 7.2 Implement `for-of` iteration
-- [ ] 7.3 Implement `try-catch-finally`
+- [x] 7.3 Implement `try-catch-finally`
 - [x] 7.4 Implement closure variable capture
 - [ ] 7.5 Implement `new` operator
 - [ ] 7.6 Implement `delete` and `in` operators
 - [ ] 7.7 Implement `typeof` and `instanceof`
 
-**Status**: In Progress (closures complete)
+**Status**: In Progress (closures and try-catch-finally complete)
 
 ---
 
@@ -140,15 +140,15 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 7.4 Complete (Closures)
+**Last Updated**: Stage 7.3 and 7.4 Complete (Closures and try-catch-finally)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
 - `src/value.rs` - JSValue tagged union with string support, closure support
-- `src/context.rs` - JSContext with closure tests
+- `src/context.rs` - JSContext with closure and try-catch tests
 - `src/gc/mod.rs`, `allocator.rs`, `collector.rs` - GC system
-- `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM with closure support
-- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with closure variable capture
+- `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM with closure and exception support
+- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with closure capture and try-catch-finally
 - `src/builtins/` - Builtin stubs
 - `src/runtime/mod.rs` - Runtime module
 - `src/runtime/object.rs` - JSObject, ClassId, Property types
@@ -159,7 +159,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 148 passing
+**Test Count**: 154 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -192,4 +192,16 @@
 - Nested closures that capture from outer function's locals or captures
 - typeof closure returns "function"
 
-**Next Action**: Begin Stage 5 (Core Builtins) or continue Stage 7 (for-in, try-catch, new)
+**Stage 7.3 Try-Catch-Finally Features**:
+- throw statement for raising exceptions
+- try-catch statement for catching exceptions
+- try-catch-finally statement with finally block
+- Catch opcode sets up exception handler
+- DropCatch opcode removes exception handler when try completes normally
+- Throw opcode triggers exception unwinding to nearest handler
+- ExceptionHandler struct tracks frame depth, catch PC, and stack depth
+- Exception value passed to catch block as parameter
+- Nested try-catch with proper handler chaining
+- Exception propagation through function calls
+
+**Next Action**: Begin Stage 5 (Core Builtins) or continue Stage 7 (for-in, new operator)

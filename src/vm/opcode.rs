@@ -186,11 +186,13 @@ pub enum OpCode {
     IfTrue,
     /// Unconditional jump (32-bit offset)
     Goto,
-    /// Set up catch handler
+    /// Set up catch handler (32-bit offset to catch block)
     Catch,
-    /// Jump to finally block
+    /// Remove catch handler (when try block completes normally)
+    DropCatch,
+    /// Jump to finally block (push return address)
     Gosub,
-    /// Return from finally block
+    /// Return from finally block (pop return address)
     Ret,
 
     // Iteration
@@ -488,6 +490,8 @@ pub static OPCODE_INFO: [OpCodeInfo; OpCode::COUNT] = [
     OpCodeInfo::new(5, 0, 0, OpFormat::Label),
     // Catch
     OpCodeInfo::new(5, 0, 1, OpFormat::Label),
+    // DropCatch
+    OpCodeInfo::new(1, 0, 0, OpFormat::None),
     // Gosub
     OpCodeInfo::new(5, 0, 0, OpFormat::Label),
     // Ret

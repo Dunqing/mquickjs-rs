@@ -141,6 +141,17 @@ impl std::error::Error for InterpreterError {}
 /// Result type for interpreter operations
 pub type InterpreterResult<T> = Result<T, InterpreterError>;
 
+/// Exception handler info
+#[derive(Debug, Clone)]
+pub struct ExceptionHandler {
+    /// Call stack depth when handler was registered
+    pub frame_depth: usize,
+    /// Program counter to jump to when exception is caught
+    pub catch_pc: usize,
+    /// Stack depth when handler was registered (to restore stack)
+    pub stack_depth: usize,
+}
+
 /// Interpreter state
 pub struct Interpreter {
     /// Value stack
@@ -155,6 +166,8 @@ pub struct Interpreter {
     /// Closures created during execution
     /// Values on the stack can reference closures by index
     closures: Vec<ClosureData>,
+    /// Exception handler stack
+    exception_handlers: Vec<ExceptionHandler>,
 }
 
 impl Interpreter {
@@ -171,6 +184,7 @@ impl Interpreter {
             max_recursion: Self::DEFAULT_MAX_RECURSION,
             runtime_strings: Vec::new(),
             closures: Vec::new(),
+            exception_handlers: Vec::new(),
         }
     }
 
@@ -182,6 +196,7 @@ impl Interpreter {
             max_recursion,
             runtime_strings: Vec::new(),
             closures: Vec::new(),
+            exception_handlers: Vec::new(),
         }
     }
 
@@ -1187,6 +1202,72 @@ impl Interpreter {
                     };
 
                     println!("{}", output);
+                }
+
+                // Catch - set up exception handler
+                op if op == OpCode::Catch as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let offset = i32::from_le_bytes([
+                        bc[frame.pc],
+                        bc[frame.pc + 1],
+                        bc[frame.pc + 2],
+                        bc[frame.pc + 3],
+                    ]);
+                    frame.pc += 4;
+
+                    // Calculate catch PC (relative to end of instruction)
+                    let catch_pc = (frame.pc as i32 + offset) as usize;
+
+                    // Push exception handler
+                    self.exception_handlers.push(ExceptionHandler {
+                        frame_depth: self.call_stack.len(),
+                        catch_pc,
+                        stack_depth: self.stack.len(),
+                    });
+                }
+
+                // DropCatch - remove exception handler
+                op if op == OpCode::DropCatch as u8 => {
+                    // Pop the top exception handler
+                    self.exception_handlers.pop();
+                }
+
+                // Throw - throw exception
+                op if op == OpCode::Throw as u8 => {
+                    let exception = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    // Find the nearest exception handler
+                    if let Some(handler) = self.exception_handlers.pop() {
+                        // Unwind call stack to the handler's frame
+                        while self.call_stack.len() > handler.frame_depth {
+                            self.call_stack.pop();
+                        }
+
+                        // Restore stack to handler's depth
+                        while self.stack.len() > handler.stack_depth {
+                            self.stack.pop();
+                        }
+
+                        // Push the exception value for the catch block
+                        self.stack.push(exception);
+
+                        // Jump to catch block
+                        if let Some(frame) = self.call_stack.last_mut() {
+                            frame.pc = handler.catch_pc;
+                        } else {
+                            // No more frames - unhandled exception
+                            return Err(InterpreterError::InternalError(
+                                format!("Uncaught exception: {:?}", exception)
+                            ));
+                        }
+                    } else {
+                        // No handler - unhandled exception
+                        return Err(InterpreterError::InternalError(
+                            format!("Uncaught exception: {:?}", exception)
+                        ));
+                    }
                 }
 
                 // Unknown opcode
