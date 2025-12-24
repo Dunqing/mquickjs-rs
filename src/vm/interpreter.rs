@@ -721,7 +721,8 @@ impl Interpreter {
                         bc[frame.pc + 2],
                         bc[frame.pc + 3],
                     ]);
-                    // Offset is relative to current pc (before reading the offset)
+                    frame.pc += 4;
+                    // offset is relative to the end of this instruction (after the 4-byte offset)
                     frame.pc = (frame.pc as i32 + offset) as usize;
                 }
 
@@ -740,7 +741,8 @@ impl Interpreter {
                     ]);
                     frame.pc += 4;
                     if !is_truthy {
-                        frame.pc = (frame.pc as i32 + offset - 4) as usize;
+                        // offset is relative to the end of this instruction (after the 4-byte offset)
+                        frame.pc = (frame.pc as i32 + offset) as usize;
                     }
                 }
 
@@ -759,7 +761,8 @@ impl Interpreter {
                     ]);
                     frame.pc += 4;
                     if is_truthy {
-                        frame.pc = (frame.pc as i32 + offset - 4) as usize;
+                        // offset is relative to the end of this instruction (after the 4-byte offset)
+                        frame.pc = (frame.pc as i32 + offset) as usize;
                     }
                 }
 
@@ -1197,12 +1200,12 @@ mod tests {
         // When IfFalse executes:
         // - pc is at 2 (pointing to offset bytes)
         // - we read offset, pc becomes 6
-        // - if condition is false, pc = 6 + (offset - 4) should go to 8 (Push2)
-        // - so offset - 4 = 2, offset = 6
+        // - if condition is false, pc = 6 + offset should go to 8 (Push2)
+        // - so offset = 2
         let bc = make_bytecode(vec![
             OpCode::PushFalse as u8,     // 0
             OpCode::IfFalse as u8,       // 1
-            6, 0, 0, 0,                  // 2-5: offset = 6
+            2, 0, 0, 0,                  // 2-5: offset = 2
             OpCode::Push1 as u8,         // 6
             OpCode::Return as u8,        // 7
             OpCode::Push2 as u8,         // 8
