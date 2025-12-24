@@ -105,11 +105,11 @@
 - [x] 7.3 Implement `try-catch-finally`
 - [x] 7.4 Implement closure variable capture
 - [x] 7.5 Implement array literals and operations
-- [ ] 7.6 Implement `new` operator
+- [x] 7.6 Implement `new` operator and basic object support
 - [ ] 7.7 Implement `delete` and `in` operators
 - [ ] 7.8 Implement `instanceof`
 
-**Status**: In Progress (closures, try-catch-finally, arrays complete)
+**Status**: In Progress (closures, try-catch-finally, arrays, objects, new operator complete)
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 7.5 Complete (Closures, try-catch-finally, arrays)
+**Last Updated**: Stage 7.6 Complete (Closures, try-catch-finally, arrays, objects, new operator)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 165 passing
+**Test Count**: 171 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -216,4 +216,13 @@
 - Out-of-bounds access returns undefined
 - Trailing comma support in array literals
 
-**Next Action**: Continue Stage 7 (new operator, for-in, for-of)
+**Stage 7.6 Object and New Operator Features**:
+- Object value type using special tag encoding (bit 25 marker)
+- Object storage in interpreter (Vec<(String, Value)> for properties)
+- GetField/PutField opcodes for property access (obj.prop and obj.prop = val)
+- new_expr_target() parses constructor without consuming call
+- CallConstructor opcode creates object and calls constructor with this=object
+- typeof returns "object" for objects
+- Built-in string constants for typeof comparisons
+
+**Next Action**: Continue Stage 7 (for-in, for-of, delete, in operators) or begin Stage 5 (Core Builtins)
