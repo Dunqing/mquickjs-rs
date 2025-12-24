@@ -58,13 +58,13 @@
 **Goal**: Parse JavaScript source to bytecode
 
 - [x] 4.1 Implement lexer/tokenizer
-- [ ] 4.2 Implement parser state machine
-- [ ] 4.3 Implement expression parsing
-- [ ] 4.4 Implement statement parsing
-- [ ] 4.5 Implement bytecode generation
-- [ ] 4.6 Implement scope and variable resolution
+- [x] 4.2 Implement parser state machine
+- [x] 4.3 Implement expression parsing
+- [x] 4.4 Implement statement parsing
+- [x] 4.5 Implement bytecode generation
+- [ ] 4.6 Implement scope and variable resolution (partial - closures pending)
 
-**Status**: In Progress
+**Status**: Mostly Complete
 
 ---
 
@@ -140,7 +140,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 2 Complete
+**Last Updated**: Stage 4 Mostly Complete
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -148,7 +148,7 @@
 - `src/context.rs` - JSContext
 - `src/gc/mod.rs`, `allocator.rs`, `collector.rs` - GC system
 - `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM
-- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser
+- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with expression/statement parsing
 - `src/builtins/` - Builtin stubs
 - `src/runtime/mod.rs` - Runtime module
 - `src/runtime/object.rs` - JSObject, ClassId, Property types
@@ -159,6 +159,18 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 88 passing
+**Test Count**: 103 passing
 
-**Next Action**: Begin Stage 4 (Parser & Compiler)
+**Stage 4 Compiler Features**:
+- Precedence climbing expression parser
+- All binary operators (+, -, *, /, %, **, &, |, ^, <<, >>, >>>)
+- Comparison operators (<, <=, >, >=, ==, !=, ===, !==)
+- Unary operators (-, +, !, ~, typeof, ++, --)
+- Ternary operator (?:)
+- Short-circuit logical operators (&&, ||)
+- Statement parsing (var/let/const, if/else, while, for, return, block)
+- Local variable tracking with scope depth
+- Optimized integer emission (Push0-7, PushI8, PushI16)
+- Jump patching for control flow
+
+**Next Action**: Integrate compiler with interpreter, or begin Stage 5 (Core Builtins)
