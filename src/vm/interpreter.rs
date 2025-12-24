@@ -96,6 +96,9 @@ pub struct Interpreter {
     call_stack: Vec<CallFrame>,
     /// Maximum call recursion depth
     max_recursion: usize,
+    /// Runtime strings (created during execution, e.g., from concatenation)
+    /// Indices start from 0x8000 to distinguish from compile-time strings
+    runtime_strings: Vec<String>,
 }
 
 impl Interpreter {
@@ -110,6 +113,7 @@ impl Interpreter {
             stack: Stack::new(Self::DEFAULT_STACK_SIZE),
             call_stack: Vec::with_capacity(64),
             max_recursion: Self::DEFAULT_MAX_RECURSION,
+            runtime_strings: Vec::new(),
         }
     }
 
@@ -119,7 +123,40 @@ impl Interpreter {
             stack: Stack::new(stack_size),
             call_stack: Vec::with_capacity(64),
             max_recursion,
+            runtime_strings: Vec::new(),
         }
+    }
+
+    /// Runtime string index offset (indices >= this are runtime strings)
+    const RUNTIME_STRING_OFFSET: u16 = 0x8000;
+
+    /// Get string content from a string value
+    fn get_string_content<'a>(&'a self, val: Value, bytecode: &'a FunctionBytecode) -> Option<&'a str> {
+        if !val.is_string() {
+            return None;
+        }
+        let idx = val.to_string_idx()?;
+
+        // Check if it's a built-in string
+        if let Some(s) = crate::value::get_builtin_string(idx) {
+            return Some(s);
+        }
+
+        // Check if it's a runtime string
+        if idx >= Self::RUNTIME_STRING_OFFSET {
+            let runtime_idx = (idx - Self::RUNTIME_STRING_OFFSET) as usize;
+            return self.runtime_strings.get(runtime_idx).map(|s| s.as_str());
+        }
+
+        // Otherwise it's a compile-time string
+        bytecode.string_constants.get(idx as usize).map(|s| s.as_str())
+    }
+
+    /// Create a runtime string and return its Value
+    fn create_runtime_string(&mut self, s: String) -> Value {
+        let idx = self.runtime_strings.len();
+        self.runtime_strings.push(s);
+        Value::string(Self::RUNTIME_STRING_OFFSET + idx as u16)
     }
 
     /// Execute bytecode and return the result
@@ -299,8 +336,7 @@ impl Interpreter {
 
                 // Push empty string
                 op if op == OpCode::PushEmptyString as u8 => {
-                    // Empty string is stored as string index 0xFFFF (special sentinel)
-                    self.stack.push(Value::string(0xFFFF));
+                    self.stack.push(Value::string(crate::value::STR_EMPTY));
                 }
 
                 // Stack manipulation: Drop
@@ -548,12 +584,50 @@ impl Interpreter {
                     self.stack.push(result);
                 }
 
-                // Arithmetic: Add
+                // Arithmetic: Add (also handles string concatenation)
                 op if op == OpCode::Add as u8 => {
                     let b = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
                     let a = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    let result = self.op_add(a, b)?;
-                    self.stack.push(result);
+
+                    // String concatenation: if either operand is a string, convert both to strings and concat
+                    if a.is_string() || b.is_string() {
+                        let frame = self.call_stack.last().unwrap();
+                        let bytecode = unsafe { &*frame.bytecode };
+
+                        let str_a = if a.is_string() {
+                            self.get_string_content(a, bytecode).unwrap_or("").to_string()
+                        } else if let Some(n) = a.to_i32() {
+                            n.to_string()
+                        } else if a.is_bool() {
+                            if a.to_bool().unwrap_or(false) { "true" } else { "false" }.to_string()
+                        } else if a.is_null() {
+                            "null".to_string()
+                        } else if a.is_undefined() {
+                            "undefined".to_string()
+                        } else {
+                            "[object]".to_string()
+                        };
+
+                        let str_b = if b.is_string() {
+                            self.get_string_content(b, bytecode).unwrap_or("").to_string()
+                        } else if let Some(n) = b.to_i32() {
+                            n.to_string()
+                        } else if b.is_bool() {
+                            if b.to_bool().unwrap_or(false) { "true" } else { "false" }.to_string()
+                        } else if b.is_null() {
+                            "null".to_string()
+                        } else if b.is_undefined() {
+                            "undefined".to_string()
+                        } else {
+                            "[object]".to_string()
+                        };
+
+                        let result = self.create_runtime_string(str_a + &str_b);
+                        self.stack.push(result);
+                    } else {
+                        let result = self.op_add(a, b)?;
+                        self.stack.push(result);
+                    }
                 }
 
                 // Arithmetic: Subtract
@@ -890,35 +964,25 @@ impl Interpreter {
 
                 // TypeOf operator
                 op if op == OpCode::TypeOf as u8 => {
+                    use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING};
+
                     let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    let type_str = if val.is_undefined() {
-                        "undefined"
+                    let type_idx = if val.is_undefined() {
+                        STR_UNDEFINED
                     } else if val.is_null() {
-                        "object" // typeof null === "object" (JavaScript quirk)
+                        STR_OBJECT // typeof null === "object" (JavaScript quirk)
                     } else if val.is_bool() {
-                        "boolean"
+                        STR_BOOLEAN
                     } else if val.is_int() {
-                        "number"
+                        STR_NUMBER
                     } else if val.is_string() {
-                        "string"
+                        STR_STRING
                     } else if val.is_func() || val.to_func_ptr().is_some() {
-                        "function"
+                        STR_FUNCTION
                     } else {
-                        "object" // Default for pointers/objects
+                        STR_OBJECT // Default for pointers/objects
                     };
-                    // For now, push an integer representing the type
-                    // (We'll need proper string values for full typeof support)
-                    // Use a special encoding: 0=undefined, 1=object, 2=boolean, 3=number, 4=function, 5=string
-                    let type_code = match type_str {
-                        "undefined" => 0,
-                        "object" => 1,
-                        "boolean" => 2,
-                        "number" => 3,
-                        "function" => 4,
-                        "string" => 5,
-                        _ => 1,
-                    };
-                    self.stack.push(Value::int(type_code));
+                    self.stack.push(Value::string(type_idx));
                 }
 
                 // Nop

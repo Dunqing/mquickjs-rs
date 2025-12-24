@@ -568,55 +568,71 @@ mod tests {
 
     #[test]
     fn test_typeof_operator() {
+        use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION};
+
         let mut ctx = Context::new(64 * 1024);
 
-        // typeof returns type codes: 0=undefined, 1=object, 2=boolean, 3=number, 4=function, 5=string
+        // typeof now returns string values
         // typeof undefined
         let result = ctx.eval("var x; return typeof x;").unwrap();
-        assert_eq!(result.to_i32(), Some(0)); // undefined
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_UNDEFINED));
 
         // typeof null
         let result = ctx.eval("return typeof null;").unwrap();
-        assert_eq!(result.to_i32(), Some(1)); // object (JS quirk)
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_OBJECT)); // JS quirk
 
         // typeof boolean
         let result = ctx.eval("return typeof true;").unwrap();
-        assert_eq!(result.to_i32(), Some(2)); // boolean
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_BOOLEAN));
 
         // typeof number
         let result = ctx.eval("return typeof 42;").unwrap();
-        assert_eq!(result.to_i32(), Some(3)); // number
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_NUMBER));
 
         // typeof function
         let result = ctx.eval("function f() {} return typeof f;").unwrap();
-        assert_eq!(result.to_i32(), Some(4)); // function
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_FUNCTION));
     }
 
     #[test]
     fn test_string_literal() {
+        use crate::value::STR_STRING;
+
         let mut ctx = Context::new(64 * 1024);
 
         // typeof string
         let result = ctx.eval("return typeof \"hello\";").unwrap();
-        assert_eq!(result.to_i32(), Some(5)); // string
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_STRING));
     }
 
     #[test]
     fn test_empty_string() {
+        use crate::value::STR_STRING;
+
         let mut ctx = Context::new(64 * 1024);
 
         // Empty string
         let result = ctx.eval("return typeof \"\";").unwrap();
-        assert_eq!(result.to_i32(), Some(5)); // string
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_STRING));
     }
 
     #[test]
     fn test_string_variable() {
+        use crate::value::STR_STRING;
+
         let mut ctx = Context::new(64 * 1024);
 
         // Store string in variable and check type
         let result = ctx.eval("var s = \"world\"; return typeof s;").unwrap();
-        assert_eq!(result.to_i32(), Some(5)); // string
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_STRING));
     }
 
     #[test]
@@ -635,5 +651,59 @@ mod tests {
         // Two empty strings are equal (both map to same sentinel index)
         let result = ctx.eval("return \"\" === \"\";").unwrap();
         assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_string_concat() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Basic string concatenation
+        let result = ctx.eval("return \"hello\" + \" world\";").unwrap();
+        assert!(result.is_string());
+
+        // Concat with number
+        let result = ctx.eval("return \"value: \" + 42;").unwrap();
+        assert!(result.is_string());
+
+        // Number + string
+        let result = ctx.eval("return 123 + \"abc\";").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_concat_in_variable() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Store concatenated string and check type
+        let result = ctx.eval("var s = \"a\" + \"b\"; return typeof s;").unwrap();
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(crate::value::STR_STRING));
+    }
+
+    #[test]
+    fn test_string_concat_chain() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Multiple concatenations
+        let result = ctx.eval("return \"a\" + \"b\" + \"c\";").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_concat_with_bool() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String + boolean
+        let result = ctx.eval("return \"value: \" + true;").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_concat_with_null() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String + null
+        let result = ctx.eval("return \"value: \" + null;").unwrap();
+        assert!(result.is_string());
     }
 }

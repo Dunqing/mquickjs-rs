@@ -403,6 +403,44 @@ pub const fn fits_in_short_int(val: i32) -> bool {
     val >= SHORT_INT_MIN && val <= SHORT_INT_MAX
 }
 
+// Built-in string indices (reserved range 0xFFF0-0xFFFF)
+// These are used for typeof return values and other built-in strings
+
+/// String index for "undefined"
+pub const STR_UNDEFINED: u16 = 0xFFF0;
+/// String index for "object"
+pub const STR_OBJECT: u16 = 0xFFF1;
+/// String index for "boolean"
+pub const STR_BOOLEAN: u16 = 0xFFF2;
+/// String index for "number"
+pub const STR_NUMBER: u16 = 0xFFF3;
+/// String index for "function"
+pub const STR_FUNCTION: u16 = 0xFFF4;
+/// String index for "string"
+pub const STR_STRING: u16 = 0xFFF5;
+/// String index for empty string ""
+pub const STR_EMPTY: u16 = 0xFFFF;
+
+/// Get the built-in string content for a reserved string index
+pub fn get_builtin_string(idx: u16) -> Option<&'static str> {
+    match idx {
+        STR_UNDEFINED => Some("undefined"),
+        STR_OBJECT => Some("object"),
+        STR_BOOLEAN => Some("boolean"),
+        STR_NUMBER => Some("number"),
+        STR_FUNCTION => Some("function"),
+        STR_STRING => Some("string"),
+        STR_EMPTY => Some(""),
+        _ => None,
+    }
+}
+
+/// Check if a string index is a built-in string
+#[inline]
+pub const fn is_builtin_string(idx: u16) -> bool {
+    idx >= 0xFFF0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
