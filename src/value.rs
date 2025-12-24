@@ -224,6 +224,12 @@ impl Value {
         Value(RawValue::make_special(SpecialTag::StringChar as u8, idx as i32))
     }
 
+    /// Create a closure value (index into interpreter's closures array)
+    #[inline]
+    pub const fn closure_idx(idx: u32) -> Self {
+        Value(RawValue::make_special(SpecialTag::CatchOffset as u8, idx as i32))
+    }
+
     // Type checking
 
     /// Check if this is null
@@ -286,6 +292,12 @@ impl Value {
         self.0.get_special_tag() == SpecialTag::StringChar as u8
     }
 
+    /// Check if this is a closure
+    #[inline]
+    pub const fn is_closure(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+    }
+
     // Value extraction
 
     /// Get boolean value, returns None if not a boolean
@@ -333,6 +345,16 @@ impl Value {
     pub const fn to_string_idx(self) -> Option<u16> {
         if self.is_string() {
             Some(self.0.get_special_value() as u16)
+        } else {
+            None
+        }
+    }
+
+    /// Get closure index, returns None if not a closure
+    #[inline]
+    pub const fn to_closure_idx(self) -> Option<u32> {
+        if self.is_closure() {
+            Some(self.0.get_special_value() as u32)
         } else {
             None
         }

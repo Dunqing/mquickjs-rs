@@ -18,6 +18,19 @@ const MAX_CONSTANTS: usize = 65536;
 struct Local {
     name: String,
     depth: u32,
+    /// Whether this local is captured by an inner function
+    is_captured: bool,
+}
+
+/// Captured variable info (for closures)
+#[derive(Debug, Clone)]
+struct Capture {
+    /// Name of the captured variable
+    name: String,
+    /// Index in the outer function's locals (or captures)
+    outer_index: usize,
+    /// Whether this captures from outer's locals (true) or outer's captures (false)
+    is_local: bool,
 }
 
 /// Jump patch location
@@ -63,6 +76,12 @@ pub struct Compiler<'a> {
     functions: Vec<CompiledFunction>,
     /// Loop context stack for break/continue
     loop_stack: Vec<LoopContext>,
+    /// Captured variables from outer scopes (for closures)
+    captures: Vec<Capture>,
+    /// Outer function's locals (for resolving captures during inner function compilation)
+    outer_locals: Option<Vec<Local>>,
+    /// Outer function's captures (for resolving nested captures)
+    outer_captures: Option<Vec<Capture>>,
 }
 
 impl<'a> Compiler<'a> {
@@ -86,6 +105,9 @@ impl<'a> Compiler<'a> {
             panic_mode: false,
             functions: Vec::new(),
             loop_stack: Vec::new(),
+            captures: Vec::new(),
+            outer_locals: None,
+            outer_captures: None,
         }
     }
 
@@ -102,6 +124,16 @@ impl<'a> Compiler<'a> {
         if self.had_error {
             Err(CompileError::SyntaxError("Compilation failed".into()))
         } else {
+            // Convert captures to CaptureInfo
+            let captures: Vec<CaptureInfo> = self
+                .captures
+                .iter()
+                .map(|c| CaptureInfo {
+                    outer_index: c.outer_index,
+                    is_local: c.is_local,
+                })
+                .collect();
+
             Ok(CompiledFunction {
                 bytecode: self.bytecode,
                 constants: self.constants,
@@ -109,6 +141,7 @@ impl<'a> Compiler<'a> {
                 local_count: self.max_locals,
                 arg_count: 0, // Top-level script has no arguments
                 functions: self.functions,
+                captures,
             })
         }
     }
@@ -332,6 +365,18 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Emit get capture instruction
+    fn emit_get_capture(&mut self, index: usize) {
+        self.emit_op(OpCode::GetVarRef);
+        self.emit_u16(index as u16);
+    }
+
+    /// Emit set capture instruction
+    fn emit_set_capture(&mut self, index: usize) {
+        self.emit_op(OpCode::PutVarRef);
+        self.emit_u16(index as u16);
+    }
+
     /// Emit a jump instruction and return the patch location
     fn emit_jump(&mut self, op: OpCode) -> JumpPatch {
         self.emit_op(op);
@@ -411,6 +456,7 @@ impl<'a> Compiler<'a> {
         self.locals.push(Local {
             name: name.to_string(),
             depth: self.scope_depth,
+            is_captured: false,
         });
 
         // Track maximum locals for frame allocation
@@ -428,6 +474,56 @@ impl<'a> Compiler<'a> {
                 return Some(i);
             }
         }
+        None
+    }
+
+    /// Resolve a captured variable, returning its capture index
+    /// This also adds the capture if it doesn't exist yet
+    fn resolve_capture(&mut self, name: &str) -> Option<usize> {
+        // First check if we already have this capture
+        for (i, capture) in self.captures.iter().enumerate() {
+            if capture.name == name {
+                return Some(i);
+            }
+        }
+
+        // Try to resolve from outer function's locals
+        if let Some(ref mut outer_locals) = self.outer_locals.clone() {
+            for (i, local) in outer_locals.iter().enumerate().rev() {
+                if local.name == name {
+                    // Mark the outer local as captured
+                    if let Some(ref mut locals) = self.outer_locals {
+                        locals[i].is_captured = true;
+                    }
+
+                    // Add a new capture
+                    let capture_idx = self.captures.len();
+                    self.captures.push(Capture {
+                        name: name.to_string(),
+                        outer_index: i,
+                        is_local: true,
+                    });
+                    return Some(capture_idx);
+                }
+            }
+        }
+
+        // Try to resolve from outer function's captures (nested closure)
+        if let Some(ref outer_captures) = self.outer_captures.clone() {
+            for (i, capture) in outer_captures.iter().enumerate() {
+                if capture.name == name {
+                    // Add a new capture that references outer's capture
+                    let capture_idx = self.captures.len();
+                    self.captures.push(Capture {
+                        name: name.to_string(),
+                        outer_index: i,
+                        is_local: false,
+                    });
+                    return Some(capture_idx);
+                }
+            }
+        }
+
         None
     }
 
@@ -622,8 +718,16 @@ impl<'a> Compiler<'a> {
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_functions = std::mem::take(&mut self.functions);
         let saved_loop_stack = std::mem::take(&mut self.loop_stack);
+        let saved_captures = std::mem::take(&mut self.captures);
+        let saved_outer_locals = std::mem::take(&mut self.outer_locals);
+        let saved_outer_captures = std::mem::take(&mut self.outer_captures);
         let saved_max_locals = self.max_locals;
         let saved_scope_depth = self.scope_depth;
+
+        // Set outer locals and captures for closure resolution
+        // The inner function can capture from our locals
+        self.outer_locals = Some(saved_locals.clone());
+        self.outer_captures = Some(saved_captures.clone());
 
         // Reset for function compilation
         self.bytecode = Vec::new();
@@ -632,6 +736,7 @@ impl<'a> Compiler<'a> {
         self.locals = Vec::new();
         self.functions = Vec::new();
         self.loop_stack = Vec::new();
+        self.captures = Vec::new();
         self.max_locals = 0;
         self.scope_depth = 0;
 
@@ -660,6 +765,16 @@ impl<'a> Compiler<'a> {
         // Emit implicit return undefined
         self.emit_op(OpCode::ReturnUndef);
 
+        // Convert captures to CaptureInfo
+        let captures: Vec<CaptureInfo> = self
+            .captures
+            .iter()
+            .map(|c| CaptureInfo {
+                outer_index: c.outer_index,
+                is_local: c.is_local,
+            })
+            .collect();
+
         // Create compiled function
         let result = CompiledFunction {
             bytecode: std::mem::take(&mut self.bytecode),
@@ -668,6 +783,7 @@ impl<'a> Compiler<'a> {
             local_count: self.max_locals,
             arg_count,
             functions: std::mem::take(&mut self.functions),
+            captures,
         };
 
         // Restore compiler state
@@ -677,6 +793,9 @@ impl<'a> Compiler<'a> {
         self.locals = saved_locals;
         self.functions = saved_functions;
         self.loop_stack = saved_loop_stack;
+        self.captures = saved_captures;
+        self.outer_locals = saved_outer_locals;
+        self.outer_captures = saved_outer_captures;
         self.max_locals = saved_max_locals;
         self.scope_depth = saved_scope_depth;
 
@@ -1031,13 +1150,25 @@ impl<'a> Compiler<'a> {
                     let op = self.current_token.clone();
                     self.advance();
 
-                    let idx = self.resolve_local(&name).ok_or_else(|| {
-                        CompileError::SyntaxError(format!("Undefined variable '{}'", name))
-                    })?;
+                    // Resolve variable: local, capture, or error
+                    let (is_local, idx) = if let Some(idx) = self.resolve_local(&name) {
+                        (true, idx)
+                    } else if let Some(idx) = self.resolve_capture(&name) {
+                        (false, idx)
+                    } else {
+                        return Err(CompileError::SyntaxError(format!(
+                            "Undefined variable '{}'",
+                            name
+                        )));
+                    };
 
                     // For compound assignment (+=, -=, etc.), get the current value first
                     if !matches!(op, Token::Eq) {
-                        self.emit_get_local(idx);
+                        if is_local {
+                            self.emit_get_local(idx);
+                        } else {
+                            self.emit_get_capture(idx);
+                        }
                     }
 
                     // Parse the right-hand side
@@ -1062,9 +1193,15 @@ impl<'a> Compiler<'a> {
 
                     // Duplicate value (for expression result) and store
                     self.emit_op(OpCode::Dup);
-                    self.emit_set_local(idx);
+                    if is_local {
+                        self.emit_set_local(idx);
+                    } else {
+                        self.emit_set_capture(idx);
+                    }
                 } else if let Some(idx) = self.resolve_local(&name) {
                     self.emit_get_local(idx);
+                } else if let Some(idx) = self.resolve_capture(&name) {
+                    self.emit_get_capture(idx);
                 } else {
                     // Global variable - emit as property access on global object
                     // For now, emit error for undefined variable
@@ -1121,6 +1258,11 @@ impl<'a> Compiler<'a> {
                         self.emit_op(OpCode::Inc);
                         self.emit_op(OpCode::Dup);
                         self.emit_set_local(idx);
+                    } else if let Some(idx) = self.resolve_capture(&name) {
+                        self.emit_get_capture(idx);
+                        self.emit_op(OpCode::Inc);
+                        self.emit_op(OpCode::Dup);
+                        self.emit_set_capture(idx);
                     } else {
                         return Err(CompileError::SyntaxError(format!(
                             "Undefined variable '{}'",
@@ -1143,6 +1285,11 @@ impl<'a> Compiler<'a> {
                         self.emit_op(OpCode::Dec);
                         self.emit_op(OpCode::Dup);
                         self.emit_set_local(idx);
+                    } else if let Some(idx) = self.resolve_capture(&name) {
+                        self.emit_get_capture(idx);
+                        self.emit_op(OpCode::Dec);
+                        self.emit_op(OpCode::Dup);
+                        self.emit_set_capture(idx);
                     } else {
                         return Err(CompileError::SyntaxError(format!(
                             "Undefined variable '{}'",
@@ -1447,6 +1594,15 @@ enum Associativity {
 }
 
 /// Compiled function
+/// Capture info for closures (public for interpreter use)
+#[derive(Debug, Clone)]
+pub struct CaptureInfo {
+    /// Index in the outer function's locals (or captures)
+    pub outer_index: usize,
+    /// Whether this captures from outer's locals (true) or outer's captures (false)
+    pub is_local: bool,
+}
+
 pub struct CompiledFunction {
     /// Bytecode bytes
     pub bytecode: Vec<u8>,
@@ -1460,6 +1616,8 @@ pub struct CompiledFunction {
     pub arg_count: usize,
     /// Inner functions defined within this function
     pub functions: Vec<CompiledFunction>,
+    /// Capture information for closures
+    pub captures: Vec<CaptureInfo>,
 }
 
 /// Compilation error

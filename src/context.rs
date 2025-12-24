@@ -99,10 +99,22 @@ impl Context {
 
     /// Convert CompiledFunction to FunctionBytecode (recursive for inner functions)
     fn compiled_to_bytecode(compiled: crate::parser::compiler::CompiledFunction) -> FunctionBytecode {
+        use crate::runtime::CaptureInfo;
+
         let inner_functions = compiled
             .functions
             .into_iter()
             .map(Self::compiled_to_bytecode)
+            .collect();
+
+        // Convert compiler's CaptureInfo to runtime's CaptureInfo
+        let captures = compiled
+            .captures
+            .into_iter()
+            .map(|c| CaptureInfo {
+                outer_index: c.outer_index,
+                is_local: c.is_local,
+            })
             .collect();
 
         FunctionBytecode {
@@ -117,6 +129,7 @@ impl Context {
             source_file: None,
             line_numbers: Vec::new(),
             inner_functions,
+            captures,
         }
     }
 
@@ -732,5 +745,99 @@ mod tests {
         // Print result of expression
         let result = ctx.eval("print 2 + 3; return 1;").unwrap();
         assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_simple_closure() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Simple closure that captures a variable
+        let result = ctx.eval("
+            function outer() {
+                var x = 42;
+                function inner() {
+                    return x;
+                }
+                return inner();
+            }
+            return outer();
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_closure_captures_value() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Closure captures the value at definition time (value capture semantics)
+        let result = ctx.eval("
+            function makeAdder(x) {
+                function adder(y) {
+                    return x + y;
+                }
+                return adder;
+            }
+            var add5 = makeAdder(5);
+            return add5(10);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(15));
+    }
+
+    #[test]
+    fn test_closure_with_multiple_captures() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Closure that captures multiple variables
+        let result = ctx.eval("
+            function outer() {
+                var a = 10;
+                var b = 20;
+                function inner() {
+                    return a + b;
+                }
+                return inner();
+            }
+            return outer();
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(30));
+    }
+
+    #[test]
+    fn test_closure_with_parameter() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Closure captures parameter
+        let result = ctx.eval("
+            function multiplier(factor) {
+                function mult(x) {
+                    return x * factor;
+                }
+                return mult;
+            }
+            var double = multiplier(2);
+            return double(7);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(14));
+    }
+
+    #[test]
+    fn test_closure_typeof() {
+        use crate::value::STR_FUNCTION;
+
+        let mut ctx = Context::new(64 * 1024);
+
+        // typeof closure should be "function"
+        let result = ctx.eval("
+            function outer() {
+                var x = 1;
+                function inner() {
+                    return x;
+                }
+                return inner;
+            }
+            return typeof outer();
+        ").unwrap();
+        assert!(result.is_string());
+        assert_eq!(result.to_string_idx(), Some(STR_FUNCTION));
     }
 }

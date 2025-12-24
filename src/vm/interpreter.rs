@@ -7,6 +7,34 @@ use crate::value::Value;
 use crate::vm::opcode::OpCode;
 use crate::vm::stack::Stack;
 
+/// Closure data storing captured variable values
+#[derive(Debug, Clone)]
+pub struct ClosureData {
+    /// Reference to the function bytecode
+    pub bytecode: *const FunctionBytecode,
+    /// Captured variable values
+    pub var_refs: Vec<Value>,
+}
+
+impl ClosureData {
+    /// Create a new closure with captured values
+    pub fn new(bytecode: *const FunctionBytecode, var_refs: Vec<Value>) -> Self {
+        ClosureData { bytecode, var_refs }
+    }
+
+    /// Get a captured variable value
+    pub fn get_var(&self, index: usize) -> Option<Value> {
+        self.var_refs.get(index).copied()
+    }
+
+    /// Set a captured variable value
+    pub fn set_var(&mut self, index: usize, value: Value) {
+        if index < self.var_refs.len() {
+            self.var_refs[index] = value;
+        }
+    }
+}
+
 /// Call frame information
 #[derive(Debug, Clone)]
 pub struct CallFrame {
@@ -26,6 +54,8 @@ pub struct CallFrame {
     pub this_val: Value,
     /// The function value itself (for self-reference/recursion)
     pub this_func: Value,
+    /// Index into closures array if this frame is executing a closure
+    pub closure_idx: Option<usize>,
 }
 
 impl CallFrame {
@@ -46,6 +76,29 @@ impl CallFrame {
             prev_frame_ptr: 0,
             this_val,
             this_func,
+            closure_idx: None,
+        }
+    }
+
+    /// Create a call frame for a closure
+    pub fn new_closure(
+        bytecode: *const FunctionBytecode,
+        frame_ptr: usize,
+        arg_count: u16,
+        this_val: Value,
+        this_func: Value,
+        closure_idx: usize,
+    ) -> Self {
+        CallFrame {
+            bytecode,
+            pc: 0,
+            frame_ptr,
+            arg_count,
+            return_pc: usize::MAX,
+            prev_frame_ptr: 0,
+            this_val,
+            this_func,
+            closure_idx: Some(closure_idx),
         }
     }
 }
@@ -99,6 +152,9 @@ pub struct Interpreter {
     /// Runtime strings (created during execution, e.g., from concatenation)
     /// Indices start from 0x8000 to distinguish from compile-time strings
     runtime_strings: Vec<String>,
+    /// Closures created during execution
+    /// Values on the stack can reference closures by index
+    closures: Vec<ClosureData>,
 }
 
 impl Interpreter {
@@ -114,6 +170,7 @@ impl Interpreter {
             call_stack: Vec::with_capacity(64),
             max_recursion: Self::DEFAULT_MAX_RECURSION,
             runtime_strings: Vec::new(),
+            closures: Vec::new(),
         }
     }
 
@@ -124,8 +181,12 @@ impl Interpreter {
             call_stack: Vec::with_capacity(64),
             max_recursion,
             runtime_strings: Vec::new(),
+            closures: Vec::new(),
         }
     }
+
+    /// Closure index marker (indices into closures vec are stored as negative values)
+    const CLOSURE_INDEX_MARKER: u32 = 0x8000_0000;
 
     /// Runtime string index offset (indices >= this are runtime strings)
     const RUNTIME_STRING_OFFSET: u16 = 0x8000;
@@ -157,6 +218,24 @@ impl Interpreter {
         let idx = self.runtime_strings.len();
         self.runtime_strings.push(s);
         Value::string(Self::RUNTIME_STRING_OFFSET + idx as u16)
+    }
+
+    /// Create a closure and return a Value that references it
+    fn create_closure(&mut self, bytecode: *const FunctionBytecode, var_refs: Vec<Value>) -> Value {
+        let idx = self.closures.len();
+        self.closures.push(ClosureData::new(bytecode, var_refs));
+        // Use high bit to mark as closure index
+        Value::closure_idx(idx as u32)
+    }
+
+    /// Get a closure by index
+    fn get_closure(&self, idx: u32) -> Option<&ClosureData> {
+        self.closures.get(idx as usize)
+    }
+
+    /// Get a mutable closure by index
+    fn get_closure_mut(&mut self, idx: u32) -> Option<&mut ClosureData> {
+        self.closures.get_mut(idx as usize)
     }
 
     /// Execute bytecode and return the result
@@ -577,6 +656,43 @@ impl Interpreter {
                     self.stack.push(frame.this_func);
                 }
 
+                // Get captured variable (16-bit index)
+                op if op == OpCode::GetVarRef as u8 => {
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Get the closure for this frame
+                    let closure_idx = frame.closure_idx;
+                    let val = if let Some(closure_idx) = closure_idx {
+                        self.get_closure(closure_idx as u32)
+                            .and_then(|c| c.get_var(idx))
+                            .unwrap_or(Value::undefined())
+                    } else {
+                        Value::undefined()
+                    };
+                    self.stack.push(val);
+                }
+
+                // Set captured variable (16-bit index)
+                op if op == OpCode::PutVarRef as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last_mut().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+                    let bc = &bytecode.bytecode;
+                    let idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
+                    frame.pc += 2;
+
+                    // Set the captured variable in the closure
+                    if let Some(closure_idx) = frame.closure_idx {
+                        if let Some(closure) = self.get_closure_mut(closure_idx as u32) {
+                            closure.set_var(idx, val);
+                        }
+                    }
+                }
+
                 // Arithmetic: Negate
                 op if op == OpCode::Neg as u8 => {
                     let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
@@ -871,13 +987,16 @@ impl Interpreter {
 
                 // Function closure creation (16-bit function index)
                 op if op == OpCode::FClosure as u8 => {
-                    let frame = self.call_stack.last_mut().unwrap();
+                    let frame = self.call_stack.last().unwrap();
                     let bytecode = unsafe { &*frame.bytecode };
                     let bc = &bytecode.bytecode;
-                    let func_idx = u16::from_le_bytes([bc[frame.pc], bc[frame.pc + 1]]) as usize;
-                    frame.pc += 2;
+                    let pc = frame.pc;
+                    let frame_ptr = frame.frame_ptr;
+                    let closure_idx_current = frame.closure_idx;
 
-                    // Get the inner function bytecode pointer
+                    let func_idx = u16::from_le_bytes([bc[pc], bc[pc + 1]]) as usize;
+
+                    // Get the inner function bytecode
                     let inner_func = bytecode
                         .inner_functions
                         .get(func_idx)
@@ -888,8 +1007,39 @@ impl Interpreter {
                             ))
                         })?;
 
-                    // Push a function value with the bytecode pointer
-                    self.stack.push(Value::func_ptr(inner_func as *const _));
+                    // Capture variables based on inner function's capture info
+                    let mut var_refs = Vec::with_capacity(inner_func.captures.len());
+                    for capture in &inner_func.captures {
+                        let val = if capture.is_local {
+                            // Capture from outer's locals (current frame)
+                            self.stack
+                                .get_local_at(frame_ptr, capture.outer_index)
+                                .unwrap_or(Value::undefined())
+                        } else {
+                            // Capture from outer's captures (current frame's closure)
+                            if let Some(closure_idx) = closure_idx_current {
+                                self.get_closure(closure_idx as u32)
+                                    .and_then(|c| c.get_var(capture.outer_index))
+                                    .unwrap_or(Value::undefined())
+                            } else {
+                                Value::undefined()
+                            }
+                        };
+                        var_refs.push(val);
+                    }
+
+                    // Update PC after we're done reading
+                    let frame = self.call_stack.last_mut().unwrap();
+                    frame.pc += 2;
+
+                    // Create closure or simple function reference based on whether there are captures
+                    let func_val = if !var_refs.is_empty() {
+                        self.create_closure(inner_func as *const _, var_refs)
+                    } else {
+                        Value::func_ptr(inner_func as *const _)
+                    };
+
+                    self.stack.push(func_val);
                 }
 
                 // Function call (16-bit argc)
@@ -910,24 +1060,35 @@ impl Interpreter {
                     // Pop the function value
                     let func_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
 
-                    // Get the function bytecode - either from pointer or index
-                    let callee_bytecode: &FunctionBytecode = if let Some(ptr) = func_val.to_func_ptr() {
-                        // Pointer-based function (from FClosure or ThisFunc)
-                        unsafe { &*ptr }
-                    } else if let Some(idx) = func_val.to_func_idx() {
-                        // Index-based function (legacy, shouldn't happen anymore)
-                        bytecode
-                            .inner_functions
-                            .get(idx as usize)
-                            .ok_or_else(|| {
+                    // Determine if this is a closure or a regular function
+                    let (callee_bytecode, callee_closure_idx): (&FunctionBytecode, Option<usize>) =
+                        if let Some(closure_idx) = func_val.to_closure_idx() {
+                            // Closure call - get bytecode from closure
+                            let closure = self.get_closure(closure_idx).ok_or_else(|| {
                                 InterpreterError::InternalError(format!(
-                                    "invalid function index: {}",
-                                    idx
+                                    "invalid closure index: {}",
+                                    closure_idx
                                 ))
-                            })?
-                    } else {
-                        return Err(InterpreterError::TypeError("not a function".to_string()));
-                    };
+                            })?;
+                            (unsafe { &*closure.bytecode }, Some(closure_idx as usize))
+                        } else if let Some(ptr) = func_val.to_func_ptr() {
+                            // Pointer-based function (from FClosure without captures or ThisFunc)
+                            (unsafe { &*ptr }, None)
+                        } else if let Some(idx) = func_val.to_func_idx() {
+                            // Index-based function (legacy, shouldn't happen anymore)
+                            let bc = bytecode
+                                .inner_functions
+                                .get(idx as usize)
+                                .ok_or_else(|| {
+                                    InterpreterError::InternalError(format!(
+                                        "invalid function index: {}",
+                                        idx
+                                    ))
+                                })?;
+                            (bc, None)
+                        } else {
+                            return Err(InterpreterError::TypeError("not a function".to_string()));
+                        };
 
                     // Check recursion limit
                     if self.call_stack.len() >= self.max_recursion {
@@ -950,13 +1111,25 @@ impl Interpreter {
                         self.stack.push(Value::undefined());
                     }
 
-                    let callee_frame = CallFrame::new(
-                        callee_bytecode as *const _,
-                        callee_frame_ptr,
-                        args.len().min(u16::MAX as usize) as u16,
-                        Value::undefined(), // this value
-                        func_val,           // the function value for self-reference
-                    );
+                    // Create frame - with closure_idx if this is a closure call
+                    let callee_frame = if let Some(closure_idx) = callee_closure_idx {
+                        CallFrame::new_closure(
+                            callee_bytecode as *const _,
+                            callee_frame_ptr,
+                            args.len().min(u16::MAX as usize) as u16,
+                            Value::undefined(), // this value
+                            func_val,           // the function value for self-reference
+                            closure_idx,
+                        )
+                    } else {
+                        CallFrame::new(
+                            callee_bytecode as *const _,
+                            callee_frame_ptr,
+                            args.len().min(u16::MAX as usize) as u16,
+                            Value::undefined(), // this value
+                            func_val,           // the function value for self-reference
+                        )
+                    };
                     self.call_stack.push(callee_frame);
 
                     // Continue execution in the new frame (run loop will pick it up)
@@ -977,7 +1150,7 @@ impl Interpreter {
                         STR_NUMBER
                     } else if val.is_string() {
                         STR_STRING
-                    } else if val.is_func() || val.to_func_ptr().is_some() {
+                    } else if val.is_func() || val.to_func_ptr().is_some() || val.is_closure() {
                         STR_FUNCTION
                     } else {
                         STR_OBJECT // Default for pointers/objects

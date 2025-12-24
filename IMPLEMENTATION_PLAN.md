@@ -103,12 +103,12 @@
 - [ ] 7.1 Implement `for-in` iteration
 - [ ] 7.2 Implement `for-of` iteration
 - [ ] 7.3 Implement `try-catch-finally`
-- [ ] 7.4 Implement closure variable capture
+- [x] 7.4 Implement closure variable capture
 - [ ] 7.5 Implement `new` operator
 - [ ] 7.6 Implement `delete` and `in` operators
 - [ ] 7.7 Implement `typeof` and `instanceof`
 
-**Status**: Not Started
+**Status**: In Progress (closures complete)
 
 ---
 
@@ -140,26 +140,26 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 4 Complete
+**Last Updated**: Stage 7.4 Complete (Closures)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
-- `src/value.rs` - JSValue tagged union with string support
-- `src/context.rs` - JSContext
+- `src/value.rs` - JSValue tagged union with string support, closure support
+- `src/context.rs` - JSContext with closure tests
 - `src/gc/mod.rs`, `allocator.rs`, `collector.rs` - GC system
-- `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM
-- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with expression/statement parsing
+- `src/vm/mod.rs`, `opcode.rs`, `interpreter.rs`, `stack.rs` - VM with closure support
+- `src/parser/mod.rs`, `lexer.rs`, `compiler.rs` - Parser with closure variable capture
 - `src/builtins/` - Builtin stubs
 - `src/runtime/mod.rs` - Runtime module
 - `src/runtime/object.rs` - JSObject, ClassId, Property types
 - `src/runtime/string.rs` - JSString, StringTable
 - `src/runtime/property.rs` - PropertyTable with hash table
 - `src/runtime/array.rs` - JSArray with no-hole semantics
-- `src/runtime/function.rs` - CFunction, Closure, FunctionBytecode with string_constants
+- `src/runtime/function.rs` - CFunction, Closure, FunctionBytecode with CaptureInfo
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 143 passing
+**Test Count**: 148 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -182,4 +182,14 @@
 - String literals with concatenation support
 - print statement for output
 
-**Next Action**: Begin Stage 5 (Core Builtins) or add closures (Stage 7)
+**Stage 7.4 Closure Features**:
+- Closure variable capture (value capture semantics)
+- CaptureInfo struct for tracking captured variables
+- GetVarRef/PutVarRef opcodes for accessing captured variables
+- ClosureData structure in interpreter for storing captured values
+- FClosure opcode creates closures with captured variable values
+- Call opcode handles closure calls with proper frame setup
+- Nested closures that capture from outer function's locals or captures
+- typeof closure returns "function"
+
+**Next Action**: Begin Stage 5 (Core Builtins) or continue Stage 7 (for-in, try-catch, new)

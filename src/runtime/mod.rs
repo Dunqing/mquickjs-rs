@@ -16,7 +16,7 @@ pub mod property;
 pub mod string;
 
 pub use array::{JSArray, MAX_ARRAY_LENGTH};
-pub use function::{CFunction, Closure, FunctionBytecode, FunctionKind, VarRef, CFunctionPtr, MAX_ARGS};
+pub use function::{CFunction, Closure, FunctionBytecode, FunctionKind, VarRef, CFunctionPtr, MAX_ARGS, CaptureInfo};
 pub use object::{
     ArrayBufferData, ArrayData, CFunctionData, ClassId, ClosureData, ErrorData, JSObject,
     ObjectHeader, Property, PropertyType, RegExpData, TypedArrayData, UserData,

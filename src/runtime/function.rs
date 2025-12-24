@@ -109,10 +109,15 @@ impl Closure {
     }
 }
 
-/// Function bytecode header
-///
-/// This contains metadata about a compiled JavaScript function.
+/// Capture information for closures
 #[derive(Debug, Clone)]
+pub struct CaptureInfo {
+    /// Index in the outer function's locals (or captures)
+    pub outer_index: usize,
+    /// Whether this captures from outer's locals (true) or outer's captures (false)
+    pub is_local: bool,
+}
+
 pub struct FunctionBytecode {
     /// Function name (for debugging)
     pub name: Option<String>,
@@ -136,6 +141,8 @@ pub struct FunctionBytecode {
     pub line_numbers: Vec<(u32, u32)>,
     /// Inner functions defined within this function
     pub inner_functions: Vec<FunctionBytecode>,
+    /// Capture information for closures
+    pub captures: Vec<CaptureInfo>,
 }
 
 impl FunctionBytecode {
@@ -153,6 +160,7 @@ impl FunctionBytecode {
             source_file: None,
             line_numbers: Vec::new(),
             inner_functions: Vec::new(),
+            captures: Vec::new(),
         }
     }
 
