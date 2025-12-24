@@ -121,6 +121,22 @@ impl Stack {
         self.drop_n(locals);
         self.frame_ptr = prev_frame_ptr;
     }
+
+    /// Get value at absolute index relative to a given frame pointer
+    #[inline]
+    pub fn get_local_at(&self, frame_ptr: usize, index: usize) -> Option<Value> {
+        let abs_index = frame_ptr + index;
+        self.values.get(abs_index).copied()
+    }
+
+    /// Set value at absolute index relative to a given frame pointer
+    #[inline]
+    pub fn set_local_at(&mut self, frame_ptr: usize, index: usize, value: Value) {
+        let abs_index = frame_ptr + index;
+        if abs_index < self.values.len() {
+            self.values[abs_index] = value;
+        }
+    }
 }
 
 #[cfg(test)]

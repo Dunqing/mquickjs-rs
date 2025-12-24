@@ -45,9 +45,9 @@
 **Goal**: Execute bytecode instructions
 
 - [x] 3.1 Define opcode enum (port `mquickjs_opcode.h`)
-- [ ] 3.2 Implement `JSFunctionBytecode` struct
+- [x] 3.2 Implement `JSFunctionBytecode` struct
 - [x] 3.3 Implement value stack
-- [ ] 3.4 Implement bytecode interpreter loop
+- [x] 3.4 Implement bytecode interpreter loop
 - [ ] 3.5 Implement function call mechanism
 
 **Status**: In Progress
@@ -159,6 +159,6 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 75 passing
+**Test Count**: 84 passing
 
-**Next Action**: Begin Stage 3 (Bytecode & VM Core)
+**Next Action**: Continue Stage 3 (function call mechanism)
