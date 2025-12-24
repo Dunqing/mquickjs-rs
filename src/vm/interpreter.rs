@@ -882,6 +882,37 @@ impl Interpreter {
                     // Continue execution in the new frame (run loop will pick it up)
                 }
 
+                // TypeOf operator
+                op if op == OpCode::TypeOf as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let type_str = if val.is_undefined() {
+                        "undefined"
+                    } else if val.is_null() {
+                        "object" // typeof null === "object" (JavaScript quirk)
+                    } else if val.is_bool() {
+                        "boolean"
+                    } else if val.is_int() {
+                        "number"
+                    } else if val.is_func() || val.to_func_ptr().is_some() {
+                        "function"
+                    } else {
+                        "object" // Default for pointers/objects
+                    };
+                    // For now, push an integer representing the type
+                    // (We'll need string support for proper typeof)
+                    // Use a special encoding: 0=undefined, 1=object, 2=boolean, 3=number, 4=function
+                    let type_code = match type_str {
+                        "undefined" => 0,
+                        "object" => 1,
+                        "boolean" => 2,
+                        "number" => 3,
+                        "function" => 4,
+                        "string" => 5,
+                        _ => 1,
+                    };
+                    self.stack.push(Value::int(type_code));
+                }
+
                 // Nop
                 op if op == OpCode::Nop as u8 => {
                     // Do nothing

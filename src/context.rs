@@ -490,4 +490,104 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(10)); // (1+2) + (3+4) = 10
     }
+
+    #[test]
+    fn test_break_in_while() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Break out of while loop
+        let result = ctx.eval("
+            var i = 0;
+            while (i < 100) {
+                if (i === 5) {
+                    break;
+                }
+                i = i + 1;
+            }
+            return i;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_break_in_for() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Break out of for loop
+        let result = ctx.eval("
+            var sum = 0;
+            for (var i = 0; i < 100; i = i + 1) {
+                if (i === 5) {
+                    break;
+                }
+                sum = sum + i;
+            }
+            return sum;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10)); // 0 + 1 + 2 + 3 + 4 = 10
+    }
+
+    #[test]
+    fn test_continue_in_while() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Skip even numbers
+        let result = ctx.eval("
+            var sum = 0;
+            var i = 0;
+            while (i < 10) {
+                i = i + 1;
+                if (i % 2 === 0) {
+                    continue;
+                }
+                sum = sum + i;
+            }
+            return sum;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(25)); // 1 + 3 + 5 + 7 + 9 = 25
+    }
+
+    #[test]
+    fn test_continue_in_for() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Skip multiples of 3
+        let result = ctx.eval("
+            var sum = 0;
+            for (var i = 1; i < 10; i = i + 1) {
+                if (i % 3 === 0) {
+                    continue;
+                }
+                sum = sum + i;
+            }
+            return sum;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(27)); // 1+2+4+5+7+8 = 27
+    }
+
+    #[test]
+    fn test_typeof_operator() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // typeof returns type codes: 0=undefined, 1=object, 2=boolean, 3=number, 4=function
+        // typeof undefined
+        let result = ctx.eval("var x; return typeof x;").unwrap();
+        assert_eq!(result.to_i32(), Some(0)); // undefined
+
+        // typeof null
+        let result = ctx.eval("return typeof null;").unwrap();
+        assert_eq!(result.to_i32(), Some(1)); // object (JS quirk)
+
+        // typeof boolean
+        let result = ctx.eval("return typeof true;").unwrap();
+        assert_eq!(result.to_i32(), Some(2)); // boolean
+
+        // typeof number
+        let result = ctx.eval("return typeof 42;").unwrap();
+        assert_eq!(result.to_i32(), Some(3)); // number
+
+        // typeof function
+        let result = ctx.eval("function f() {} return typeof f;").unwrap();
+        assert_eq!(result.to_i32(), Some(4)); // function
+    }
 }

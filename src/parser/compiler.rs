@@ -27,6 +27,17 @@ struct JumpPatch {
     offset: usize,
 }
 
+/// Loop context for break/continue
+#[derive(Debug, Clone)]
+struct LoopContext {
+    /// Continue jump target (start of loop or increment section)
+    continue_target: usize,
+    /// Break jump patches (to be patched after loop)
+    break_patches: Vec<JumpPatch>,
+    /// Scope depth when loop started (for proper cleanup)
+    scope_depth: u32,
+}
+
 /// Compiler state
 pub struct Compiler<'a> {
     lexer: Lexer<'a>,
@@ -48,6 +59,8 @@ pub struct Compiler<'a> {
     panic_mode: bool,
     /// Compiled inner functions
     functions: Vec<CompiledFunction>,
+    /// Loop context stack for break/continue
+    loop_stack: Vec<LoopContext>,
 }
 
 impl<'a> Compiler<'a> {
@@ -69,6 +82,7 @@ impl<'a> Compiler<'a> {
             had_error: false,
             panic_mode: false,
             functions: Vec::new(),
+            loop_stack: Vec::new(),
         }
     }
 
@@ -447,6 +461,8 @@ impl<'a> Compiler<'a> {
             Token::If => self.if_statement(),
             Token::While => self.while_statement(),
             Token::For => self.for_statement(),
+            Token::Break => self.break_statement(),
+            Token::Continue => self.continue_statement(),
             Token::Return => self.return_statement(),
             Token::LBrace => self.block_statement(),
             _ => self.expression_statement(),
@@ -599,6 +615,7 @@ impl<'a> Compiler<'a> {
         let saved_constants = std::mem::take(&mut self.constants);
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_functions = std::mem::take(&mut self.functions);
+        let saved_loop_stack = std::mem::take(&mut self.loop_stack);
         let saved_max_locals = self.max_locals;
         let saved_scope_depth = self.scope_depth;
 
@@ -607,6 +624,7 @@ impl<'a> Compiler<'a> {
         self.constants = Vec::new();
         self.locals = Vec::new();
         self.functions = Vec::new();
+        self.loop_stack = Vec::new();
         self.max_locals = 0;
         self.scope_depth = 0;
 
@@ -649,6 +667,7 @@ impl<'a> Compiler<'a> {
         self.constants = saved_constants;
         self.locals = saved_locals;
         self.functions = saved_functions;
+        self.loop_stack = saved_loop_stack;
         self.max_locals = saved_max_locals;
         self.scope_depth = saved_scope_depth;
 
@@ -688,6 +707,13 @@ impl<'a> Compiler<'a> {
 
         let loop_start = self.current_offset();
 
+        // Push loop context for break/continue
+        self.loop_stack.push(LoopContext {
+            continue_target: loop_start,
+            break_patches: Vec::new(),
+            scope_depth: self.scope_depth,
+        });
+
         self.expect(Token::LParen)?;
         self.expression()?;
         self.expect(Token::RParen)?;
@@ -698,6 +724,12 @@ impl<'a> Compiler<'a> {
 
         self.emit_loop(loop_start);
         self.patch_jump(exit_jump);
+
+        // Pop loop context and patch break jumps
+        let loop_ctx = self.loop_stack.pop().unwrap();
+        for patch in loop_ctx.break_patches {
+            self.patch_jump(patch);
+        }
 
         Ok(())
     }
@@ -748,6 +780,15 @@ impl<'a> Compiler<'a> {
 
         self.expect(Token::RParen)?;
 
+        // Push loop context for break/continue
+        // Continue should jump to increment section if present, otherwise loop start
+        let continue_target = increment_start.unwrap_or(loop_start);
+        self.loop_stack.push(LoopContext {
+            continue_target,
+            break_patches: Vec::new(),
+            scope_depth: self.scope_depth,
+        });
+
         // Body
         self.statement()?;
 
@@ -763,8 +804,56 @@ impl<'a> Compiler<'a> {
             self.patch_jump(j);
         }
 
+        // Pop loop context and patch break jumps
+        let loop_ctx = self.loop_stack.pop().unwrap();
+        for patch in loop_ctx.break_patches {
+            self.patch_jump(patch);
+        }
+
         self.end_scope();
 
+        Ok(())
+    }
+
+    /// Parse break statement
+    fn break_statement(&mut self) -> Result<(), CompileError> {
+        self.advance(); // consume 'break'
+
+        if self.loop_stack.is_empty() {
+            return Err(CompileError::SyntaxError(
+                "'break' outside of loop".to_string(),
+            ));
+        }
+
+        // Emit jump (will be patched when loop ends)
+        let patch = self.emit_jump(OpCode::Goto);
+
+        // Register this jump to be patched
+        if let Some(ctx) = self.loop_stack.last_mut() {
+            ctx.break_patches.push(patch);
+        }
+
+        self.expect(Token::Semicolon)?;
+        Ok(())
+    }
+
+    /// Parse continue statement
+    fn continue_statement(&mut self) -> Result<(), CompileError> {
+        self.advance(); // consume 'continue'
+
+        if self.loop_stack.is_empty() {
+            return Err(CompileError::SyntaxError(
+                "'continue' outside of loop".to_string(),
+            ));
+        }
+
+        // Get the continue target
+        let continue_target = self.loop_stack.last().unwrap().continue_target;
+
+        // Emit loop back to continue target
+        self.emit_loop(continue_target);
+
+        self.expect(Token::Semicolon)?;
         Ok(())
     }
 

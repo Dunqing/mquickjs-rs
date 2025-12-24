@@ -159,7 +159,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 125 passing
+**Test Count**: 130 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -177,5 +177,7 @@
 - Function declarations with parameters
 - Function calls with argument passing
 - Recursive functions (via ThisFunc opcode)
+- break and continue statements in loops
+- typeof operator (returns type code integers)
 
 **Next Action**: Begin Stage 5 (Core Builtins) or add closures (Stage 7)
