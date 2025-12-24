@@ -12,6 +12,12 @@ use crate::vm::stack::Stack;
 pub const BUILTIN_MATH: u32 = 0;
 /// JSON object index (for future use)
 pub const BUILTIN_JSON: u32 = 1;
+/// Number object index
+pub const BUILTIN_NUMBER: u32 = 2;
+/// Boolean object index
+pub const BUILTIN_BOOLEAN: u32 = 3;
+/// console object index
+pub const BUILTIN_CONSOLE: u32 = 4;
 
 /// Native function signature
 ///
@@ -1725,7 +1731,10 @@ impl Interpreter {
                         "undefined" => Some(Value::undefined()),
                         "NaN" => Some(Value::int(0)), // TODO: proper NaN when floats are added
                         "Infinity" => Some(Value::int(i32::MAX)), // TODO: proper infinity when floats are added
-                        "Math" => Some(Value::builtin_object(BUILTIN_MATH)), // Math object
+                        "Math" => Some(Value::builtin_object(BUILTIN_MATH)),
+                        "Number" => Some(Value::builtin_object(BUILTIN_NUMBER)),
+                        "Boolean" => Some(Value::builtin_object(BUILTIN_BOOLEAN)),
+                        "console" => Some(Value::builtin_object(BUILTIN_CONSOLE)),
                         _ => self.get_native_func(name),
                     };
 
@@ -2692,6 +2701,34 @@ impl Interpreter {
                 // JSON object properties (for future use)
                 Value::undefined()
             }
+            BUILTIN_NUMBER => {
+                // Number object properties
+                match prop_name {
+                    "isInteger" => self.get_native_func("Number.isInteger").unwrap_or(Value::undefined()),
+                    "isNaN" => self.get_native_func("Number.isNaN").unwrap_or(Value::undefined()),
+                    "isFinite" => self.get_native_func("Number.isFinite").unwrap_or(Value::undefined()),
+                    "parseInt" => self.get_native_func("parseInt").unwrap_or(Value::undefined()),
+                    // Use 31-bit safe values (our Value::int only supports 31-bit signed integers)
+                    "MAX_VALUE" => Value::int((1 << 30) - 1), // 1073741823
+                    "MIN_VALUE" => Value::int(-(1 << 30)),    // -1073741824
+                    "MAX_SAFE_INTEGER" => Value::int((1 << 30) - 1),
+                    "MIN_SAFE_INTEGER" => Value::int(-(1 << 30)),
+                    _ => Value::undefined(),
+                }
+            }
+            BUILTIN_BOOLEAN => {
+                // Boolean object - currently no static methods
+                Value::undefined()
+            }
+            BUILTIN_CONSOLE => {
+                // console object properties
+                match prop_name {
+                    "log" => self.get_native_func("console.log").unwrap_or(Value::undefined()),
+                    "error" => self.get_native_func("console.error").unwrap_or(Value::undefined()),
+                    "warn" => self.get_native_func("console.warn").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             _ => Value::undefined(),
         }
     }
@@ -2742,6 +2779,16 @@ impl Interpreter {
         self.register_native("String.prototype.toLowerCase", native_string_to_lower_case, 0);
         self.register_native("String.prototype.trim", native_string_trim, 0);
         self.register_native("String.prototype.split", native_string_split, 0);
+
+        // Number static methods
+        self.register_native("Number.isInteger", native_number_is_integer, 1);
+        self.register_native("Number.isNaN", native_number_is_nan, 1);
+        self.register_native("Number.isFinite", native_number_is_finite, 1);
+
+        // console methods
+        self.register_native("console.log", native_console_log, 0);
+        self.register_native("console.error", native_console_error, 0);
+        self.register_native("console.warn", native_console_warn, 0);
     }
 }
 
@@ -3278,6 +3325,121 @@ fn native_string_split(interp: &mut Interpreter, this: Value, args: &[Value]) ->
     let arr_idx = interp.arrays.len() as u32;
     interp.arrays.push(parts);
     Ok(Value::array_idx(arr_idx))
+}
+
+// =============================================================================
+// Number static methods
+// =============================================================================
+
+/// Number.isInteger - check if value is an integer
+fn native_number_is_integer(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // In our implementation, all numbers are integers (32-bit signed)
+    if val.to_i32().is_some() {
+        Ok(Value::bool(true))
+    } else {
+        Ok(Value::bool(false))
+    }
+}
+
+/// Number.isNaN - check if value is NaN
+fn native_number_is_nan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // NaN is represented as a special value in our implementation
+    // For now, we don't have true NaN, so this returns false for numbers
+    if val.is_undefined() || val.is_null() {
+        Ok(Value::bool(false)) // undefined/null are not NaN per spec
+    } else if val.to_i32().is_some() {
+        Ok(Value::bool(false)) // Regular numbers are not NaN
+    } else if val.to_bool().is_some() {
+        Ok(Value::bool(false)) // Booleans are not NaN
+    } else {
+        Ok(Value::bool(false)) // For now, nothing is NaN
+    }
+}
+
+/// Number.isFinite - check if value is a finite number
+fn native_number_is_finite(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // All our integers are finite (we don't have Infinity representation yet)
+    if val.to_i32().is_some() {
+        Ok(Value::bool(true))
+    } else {
+        Ok(Value::bool(false))
+    }
+}
+
+// =============================================================================
+// console methods
+// =============================================================================
+
+/// console.log - print values to stdout
+fn native_console_log(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let output = format_console_args(interp, args);
+    println!("{}", output);
+    Ok(Value::undefined())
+}
+
+/// console.error - print values to stderr
+fn native_console_error(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let output = format_console_args(interp, args);
+    eprintln!("{}", output);
+    Ok(Value::undefined())
+}
+
+/// console.warn - print values to stderr with warning
+fn native_console_warn(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let output = format_console_args(interp, args);
+    eprintln!("{}", output);
+    Ok(Value::undefined())
+}
+
+/// Format arguments for console output
+fn format_console_args(interp: &Interpreter, args: &[Value]) -> String {
+    args.iter()
+        .map(|v| format_value(interp, *v))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Format a single value for output
+fn format_value(interp: &Interpreter, val: Value) -> String {
+    if let Some(n) = val.to_i32() {
+        n.to_string()
+    } else if let Some(b) = val.to_bool() {
+        b.to_string()
+    } else if val.is_null() {
+        "null".to_string()
+    } else if val.is_undefined() {
+        "undefined".to_string()
+    } else if let Some(str_idx) = val.to_string_idx() {
+        if let Some(s) = interp.get_string_by_idx(str_idx) {
+            s.to_string()
+        } else {
+            // Compile-time string - can't look up without bytecode
+            "<string>".to_string()
+        }
+    } else if val.is_array() {
+        if let Some(arr_idx) = val.to_array_idx() {
+            if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+                let items: Vec<String> = arr.iter().map(|v| format_value(interp, *v)).collect();
+                format!("[{}]", items.join(", "))
+            } else {
+                "[Array]".to_string()
+            }
+        } else {
+            "[Array]".to_string()
+        }
+    } else if val.is_object() {
+        "[object Object]".to_string()
+    } else if val.is_closure() {
+        "[Function]".to_string()
+    } else {
+        format!("{:?}", val)
+    }
 }
 
 impl Default for Interpreter {

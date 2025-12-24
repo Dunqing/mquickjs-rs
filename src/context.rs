@@ -2146,4 +2146,109 @@ mod tests {
         ").unwrap();
         assert!(result.is_string());
     }
+
+    // =========================================================================
+    // Number static method tests
+    // =========================================================================
+
+    #[test]
+    fn test_number_is_integer() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Number.isInteger with integer
+        let result = ctx.eval("return Number.isInteger(42);").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // Number.isInteger with non-integer
+        let result = ctx.eval("return Number.isInteger(undefined);").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_number_is_finite() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Number.isFinite with number
+        let result = ctx.eval("return Number.isFinite(42);").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // Number.isFinite with non-number
+        let result = ctx.eval("return Number.isFinite(undefined);").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_number_is_nan() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Number.isNaN with regular number
+        let result = ctx.eval("return Number.isNaN(42);").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_number_max_min_value() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Number.MAX_VALUE - check it returns a large positive number
+        let result = ctx.eval("return Number.MAX_VALUE > 0;").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // Number.MIN_VALUE - check it returns a large negative number
+        let result = ctx.eval("return Number.MIN_VALUE < 0;").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    // =========================================================================
+    // console method tests
+    // =========================================================================
+
+    #[test]
+    fn test_console_log() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // console.log should execute and return undefined
+        let result = ctx.eval("
+            console.log(42);
+            return 1;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_console_log_multiple_args() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // console.log with multiple args
+        let result = ctx.eval("
+            console.log(1, 2, 3);
+            return 1;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_console_error() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // console.error should execute and return undefined
+        let result = ctx.eval("
+            console.error(42);
+            return 1;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_console_log_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // console.log with array
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            console.log(arr);
+            return 1;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }

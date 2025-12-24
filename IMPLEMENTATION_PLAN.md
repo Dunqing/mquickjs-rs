@@ -75,7 +75,7 @@
 - [ ] 5.2 Implement `Function` prototype
 - [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length)
 - [x] 5.4 Implement `String` constructor and methods (length, charAt, indexOf, slice, substring, toUpperCase, toLowerCase, trim, split)
-- [ ] 5.5 Implement `Number` constructor and methods
+- [x] 5.5 Implement `Number` constructor and methods (isInteger, isNaN, isFinite, MAX_VALUE, MIN_VALUE)
 - [ ] 5.6 Implement `Boolean` constructor
 - [x] 5.7 Implement global functions (partial: parseInt, isNaN)
 
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 227 passing
+**Test Count**: 235 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -308,4 +308,22 @@
 - Note: Methods work on runtime strings (from concatenation); compile-time literal support pending
 - 11 String method tests
 
-**Next Action**: Implement Number/Boolean constructors or continue with other builtins
+**Stage 5.5 Number Static Methods**:
+- BUILTIN_NUMBER constant for Number object
+- Number.isInteger(value) - check if value is an integer
+- Number.isNaN(value) - check if value is NaN
+- Number.isFinite(value) - check if value is finite
+- Number.parseInt(value) - alias for global parseInt
+- Number.MAX_VALUE, MIN_VALUE, MAX_SAFE_INTEGER, MIN_SAFE_INTEGER constants
+- 4 Number method tests
+
+**console Object**:
+- BUILTIN_CONSOLE constant for console object
+- console.log(...args) - print to stdout with value formatting
+- console.error(...args) - print to stderr
+- console.warn(...args) - print to stderr
+- format_value() helper for converting values to strings
+- Array and object formatting support
+- 4 console method tests
+
+**Next Action**: Implement Boolean constructor or Error hierarchy
