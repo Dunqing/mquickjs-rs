@@ -105,6 +105,9 @@ pub enum Token {
     Const,
     Let,
 
+    // Built-in statements
+    Print,
+
     // Special
     Eof,
     Error(String),
@@ -382,6 +385,7 @@ impl<'a> Lexer<'a> {
             "let" => Token::Let,
             "new" => Token::New,
             "null" => Token::Null,
+            "print" => Token::Print,
             "return" => Token::Return,
             "switch" => Token::Switch,
             "this" => Token::This,

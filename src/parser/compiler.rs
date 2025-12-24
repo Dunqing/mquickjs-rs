@@ -468,6 +468,7 @@ impl<'a> Compiler<'a> {
             Token::Break => self.break_statement(),
             Token::Continue => self.continue_statement(),
             Token::Return => self.return_statement(),
+            Token::Print => self.print_statement(),
             Token::LBrace => self.block_statement(),
             _ => self.expression_statement(),
         }
@@ -876,6 +877,17 @@ impl<'a> Compiler<'a> {
             self.expect(Token::Semicolon)?;
             self.emit_op(OpCode::Return);
         }
+
+        Ok(())
+    }
+
+    /// Parse print statement: print expr;
+    fn print_statement(&mut self) -> Result<(), CompileError> {
+        self.advance(); // consume 'print'
+
+        self.expression()?;
+        self.expect(Token::Semicolon)?;
+        self.emit_op(OpCode::Print);
 
         Ok(())
     }

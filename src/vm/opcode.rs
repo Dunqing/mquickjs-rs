@@ -344,11 +344,15 @@ pub enum OpCode {
     PutArg2,
     /// Set argument 3
     PutArg3,
+
+    // Built-in operations
+    /// Print value to stdout (pops value, pushes undefined)
+    Print,
 }
 
 impl OpCode {
     /// Total number of opcodes
-    pub const COUNT: usize = OpCode::PutArg3 as usize + 1;
+    pub const COUNT: usize = OpCode::Print as usize + 1;
 }
 
 /// Opcode metadata
@@ -624,6 +628,8 @@ pub static OPCODE_INFO: [OpCodeInfo; OpCode::COUNT] = [
     OpCodeInfo::new(1, 1, 0, OpFormat::NoneArg),
     // PutArg3
     OpCodeInfo::new(1, 1, 0, OpFormat::NoneArg),
+    // Print
+    OpCodeInfo::new(1, 1, 0, OpFormat::None),
 ];
 
 #[cfg(test)]

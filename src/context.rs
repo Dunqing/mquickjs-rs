@@ -706,4 +706,31 @@ mod tests {
         let result = ctx.eval("return \"value: \" + null;").unwrap();
         assert!(result.is_string());
     }
+
+    #[test]
+    fn test_print_statement() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Print should execute without error and return undefined
+        let result = ctx.eval("print 42; return 1;").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_print_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Print a string
+        let result = ctx.eval("print \"hello world\"; return 1;").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_print_expression() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Print result of expression
+        let result = ctx.eval("print 2 + 3; return 1;").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }

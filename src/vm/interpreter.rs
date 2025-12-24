@@ -990,6 +990,32 @@ impl Interpreter {
                     // Do nothing
                 }
 
+                // Print (built-in print statement)
+                op if op == OpCode::Print as u8 => {
+                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let frame = self.call_stack.last().unwrap();
+                    let bytecode = unsafe { &*frame.bytecode };
+
+                    // Convert value to string representation
+                    let output = if val.is_string() {
+                        self.get_string_content(val, bytecode).unwrap_or("").to_string()
+                    } else if let Some(n) = val.to_i32() {
+                        n.to_string()
+                    } else if val.is_bool() {
+                        if val.to_bool().unwrap_or(false) { "true" } else { "false" }.to_string()
+                    } else if val.is_null() {
+                        "null".to_string()
+                    } else if val.is_undefined() {
+                        "undefined".to_string()
+                    } else if val.is_func() || val.to_func_ptr().is_some() {
+                        "[function]".to_string()
+                    } else {
+                        "[object]".to_string()
+                    };
+
+                    println!("{}", output);
+                }
+
                 // Unknown opcode
                 op => {
                     return Err(InterpreterError::InvalidOpcode(op));
