@@ -7,6 +7,33 @@ use crate::value::Value;
 use crate::vm::opcode::OpCode;
 use crate::vm::stack::Stack;
 
+/// Object instance storing properties and constructor reference
+#[derive(Debug, Clone)]
+pub struct ObjectInstance {
+    /// Constructor that created this object (closure index), if any
+    pub constructor: Option<Value>,
+    /// Object properties as key-value pairs
+    pub properties: Vec<(String, Value)>,
+}
+
+impl ObjectInstance {
+    /// Create a new empty object
+    pub fn new() -> Self {
+        ObjectInstance {
+            constructor: None,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Create a new object with a constructor reference
+    pub fn with_constructor(constructor: Value) -> Self {
+        ObjectInstance {
+            constructor: Some(constructor),
+            properties: Vec::new(),
+        }
+    }
+}
+
 /// Closure data storing captured variable values
 #[derive(Debug, Clone)]
 pub struct ClosureData {
@@ -173,8 +200,7 @@ pub struct Interpreter {
     arrays: Vec<Vec<Value>>,
     /// Objects created during execution
     /// Values on the stack can reference objects by index
-    /// Each object is a vector of (property_name, value) pairs
-    objects: Vec<Vec<(String, Value)>>,
+    objects: Vec<ObjectInstance>,
 }
 
 impl Interpreter {
@@ -279,24 +305,31 @@ impl Interpreter {
     /// Create a new object and return its value
     fn create_object(&mut self) -> Value {
         let idx = self.objects.len();
-        self.objects.push(Vec::new());
+        self.objects.push(ObjectInstance::new());
+        Value::object_idx(idx as u32)
+    }
+
+    /// Create a new object with a constructor reference and return its value
+    fn create_object_with_constructor(&mut self, constructor: Value) -> Value {
+        let idx = self.objects.len();
+        self.objects.push(ObjectInstance::with_constructor(constructor));
         Value::object_idx(idx as u32)
     }
 
     /// Get an object by index
-    fn get_object(&self, idx: u32) -> Option<&Vec<(String, Value)>> {
+    fn get_object(&self, idx: u32) -> Option<&ObjectInstance> {
         self.objects.get(idx as usize)
     }
 
     /// Get a mutable object by index
-    fn get_object_mut(&mut self, idx: u32) -> Option<&mut Vec<(String, Value)>> {
+    fn get_object_mut(&mut self, idx: u32) -> Option<&mut ObjectInstance> {
         self.objects.get_mut(idx as usize)
     }
 
     /// Get a property from an object
     fn object_get_property(&self, obj_idx: u32, key: &str) -> Value {
         if let Some(obj) = self.get_object(obj_idx) {
-            for (k, v) in obj.iter() {
+            for (k, v) in obj.properties.iter() {
                 if k == key {
                     return *v;
                 }
@@ -309,14 +342,14 @@ impl Interpreter {
     fn object_set_property(&mut self, obj_idx: u32, key: String, value: Value) {
         if let Some(obj) = self.get_object_mut(obj_idx) {
             // Check if property already exists
-            for (k, v) in obj.iter_mut() {
+            for (k, v) in obj.properties.iter_mut() {
                 if k == &key {
                     *v = value;
                     return;
                 }
             }
             // Add new property
-            obj.push((key, value));
+            obj.properties.push((key, value));
         }
     }
 
@@ -1240,8 +1273,8 @@ impl Interpreter {
                     // Pop the constructor function value
                     let func_val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
 
-                    // Create a new object for 'this'
-                    let new_obj = self.create_object();
+                    // Create a new object for 'this', storing the constructor reference for instanceof
+                    let new_obj = self.create_object_with_constructor(func_val);
 
                     // Determine if this is a closure or a regular function
                     let (callee_bytecode, callee_closure_idx): (&FunctionBytecode, Option<usize>) =
@@ -1633,7 +1666,7 @@ impl Interpreter {
                         if let Some(name) = prop_name {
                             let obj_props = self.get_object(obj_idx);
                             let exists = obj_props
-                                .map(|props| props.iter().any(|(k, _)| k == &name))
+                                .map(|props| props.properties.iter().any(|(k, _)| k == &name))
                                 .unwrap_or(false);
                             Value::bool(exists)
                         } else {
@@ -1697,9 +1730,9 @@ impl Interpreter {
                         // Delete property from object
                         if let Some(name) = prop_name {
                             if let Some(obj_props) = self.get_object_mut(obj_idx) {
-                                let orig_len = obj_props.len();
-                                obj_props.retain(|(k, _)| k != &name);
-                                Value::bool(obj_props.len() < orig_len)
+                                let orig_len = obj_props.properties.len();
+                                obj_props.properties.retain(|(k, _)| k != &name);
+                                Value::bool(obj_props.properties.len() < orig_len)
                             } else {
                                 Value::bool(false)
                             }
@@ -1724,6 +1757,40 @@ impl Interpreter {
                         }
                     } else {
                         Value::bool(true) // delete on non-object returns true
+                    };
+                    self.stack.push(result);
+                }
+
+                // InstanceOf operator: obj ctor -> bool
+                op if op == OpCode::InstanceOf as u8 => {
+                    let ctor = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+
+                    let result = if let Some(obj_idx) = obj.to_object_idx() {
+                        // Get the constructor stored when the object was created
+                        if let Some(obj_instance) = self.get_object(obj_idx) {
+                            if let Some(stored_ctor) = obj_instance.constructor {
+                                // Compare if the stored constructor matches the right operand
+                                // For closures, compare the closure indices
+                                if let (Some(stored_idx), Some(ctor_idx)) =
+                                    (stored_ctor.to_closure_idx(), ctor.to_closure_idx())
+                                {
+                                    // Same closure instance
+                                    Value::bool(stored_idx == ctor_idx)
+                                } else {
+                                    // For non-closure functions, compare raw values
+                                    Value::bool(stored_ctor.0 == ctor.0)
+                                }
+                            } else {
+                                // Object was not created with new
+                                Value::bool(false)
+                            }
+                        } else {
+                            Value::bool(false)
+                        }
+                    } else {
+                        // Left operand is not an object
+                        Value::bool(false)
                     };
                     self.stack.push(result);
                 }

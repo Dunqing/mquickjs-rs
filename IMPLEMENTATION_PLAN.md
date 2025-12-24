@@ -106,10 +106,10 @@
 - [x] 7.4 Implement closure variable capture
 - [x] 7.5 Implement array literals and operations
 - [x] 7.6 Implement `new` operator and basic object support
-- [ ] 7.7 Implement `delete` and `in` operators
-- [ ] 7.8 Implement `instanceof`
+- [x] 7.7 Implement `delete` and `in` operators
+- [x] 7.8 Implement `instanceof`
 
-**Status**: In Progress (closures, try-catch-finally, arrays, objects, new operator complete)
+**Status**: In Progress (closures, try-catch-finally, arrays, objects, new, in, delete, instanceof complete)
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 7.6 Complete (Closures, try-catch-finally, arrays, objects, new operator)
+**Last Updated**: Stage 7.8 Complete (Closures, try-catch-finally, arrays, objects, new, in, delete, instanceof)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 171 passing
+**Test Count**: 183 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -225,4 +225,10 @@
 - typeof returns "object" for objects
 - Built-in string constants for typeof comparisons
 
-**Next Action**: Continue Stage 7 (for-in, for-of, delete, in operators) or begin Stage 5 (Core Builtins)
+**Stage 7.8 InstanceOf Features**:
+- ObjectInstance struct stores constructor reference when created via `new`
+- InstanceOf opcode compares stored constructor with right operand
+- Multiple instances of same constructor correctly recognized
+- Works with closures and regular functions
+
+**Next Action**: Continue Stage 7 (for-in, for-of) or begin Stage 5 (Core Builtins)

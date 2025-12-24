@@ -1339,4 +1339,94 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    #[test]
+    fn test_instanceof_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object created with new is instanceof its constructor
+        let result = ctx.eval("
+            function Foo() {
+                return this;
+            }
+            var f = new Foo();
+            if (f instanceof Foo) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_instanceof_different_constructors() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object is not instanceof a different constructor
+        let result = ctx.eval("
+            function Foo() { return this; }
+            function Bar() { return this; }
+            var f = new Foo();
+            if (f instanceof Bar) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_instanceof_non_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Non-object is not instanceof anything
+        let result = ctx.eval("
+            function Foo() { return this; }
+            var x = 42;
+            if (x instanceof Foo) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_instanceof_multiple_instances() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Multiple instances of the same constructor
+        let result = ctx.eval("
+            function Foo() { return this; }
+            var f1 = new Foo();
+            var f2 = new Foo();
+            if (f1 instanceof Foo) {
+                if (f2 instanceof Foo) {
+                    return 2;
+                }
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_instanceof_with_properties() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // instanceof works even with properties set on object
+        let result = ctx.eval("
+            function Person(name) {
+                this.name = name;
+                return this;
+            }
+            var p = new Person('Alice');
+            if (p instanceof Person) {
+                return 1;
+            }
+            return 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }
