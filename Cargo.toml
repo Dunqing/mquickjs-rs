@@ -18,6 +18,7 @@ name = "mqjs"
 path = "src/bin/mqjs.rs"
 
 [dependencies]
+regex = "1"
 
 [dev-dependencies]
 

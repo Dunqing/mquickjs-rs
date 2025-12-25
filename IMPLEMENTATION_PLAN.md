@@ -89,11 +89,11 @@
 - [x] 6.1 Implement `Error` hierarchy (Error, TypeError, ReferenceError, SyntaxError, RangeError)
 - [x] 6.2 Implement `Math` object (partial: abs, floor, ceil, round, sqrt, pow, max, min)
 - [x] 6.3 Implement `JSON` object (stringify, parse)
-- [ ] 6.4 Implement `RegExp` object
+- [x] 6.4 Implement `RegExp` object (constructor, test, exec)
 - [ ] 6.5 Implement `TypedArray` objects
 - [x] 6.6 Implement `Date.now()`
 
-**Status**: In Progress (Error, Math, JSON, Date complete)
+**Status**: In Progress (Error, Math, JSON, Date, RegExp complete)
 
 ---
 
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 298 passing
+**Test Count**: 306 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -404,4 +404,16 @@
 - Array.prototype.includes(value) - check if array contains value
 - 12 Array higher-order function tests
 
-**Next Action**: Implement RegExp (Stage 6.4) or TypedArray (Stage 6.5)
+**Stage 6.4 RegExp Features**:
+- RegExpObject struct with compiled regex, pattern, flags, and flag booleans
+- REGEXP_OBJECT_MARKER (bit 19) for value encoding
+- Value::regexp_object(), is_regexp_object(), to_regexp_object_idx() methods
+- RegExp constructor: new RegExp(pattern, flags)
+- Support for flags: g (global), i (ignoreCase), m (multiline)
+- Regex compilation using Rust's regex crate
+- RegExp.prototype.test(string) - returns boolean match result
+- RegExp.prototype.exec(string) - returns match array or null
+- get_regexp_property() for property access
+- 8 RegExp tests
+
+**Next Action**: Implement TypedArray (Stage 6.5) or more String methods

@@ -2663,6 +2663,125 @@ mod tests {
     }
 
     // ========================================
+    // RegExp Tests
+    // ========================================
+
+    #[test]
+    fn test_regexp_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Create a RegExp and check it exists
+        let result = ctx.eval("
+            var pattern = \"hello\" + \"\";
+            var re = new RegExp(pattern);
+            return typeof re;
+        ").unwrap();
+        // Note: typeof returns "object" for RegExp in our implementation
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_regexp_test_match() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test matching pattern
+        let result = ctx.eval("
+            var pattern = \"hel\" + \"lo\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            return re.test(str);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_regexp_test_no_match() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test non-matching pattern
+        let result = ctx.eval("
+            var pattern = \"xyz\" + \"\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            return re.test(str);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_regexp_test_case_sensitive() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Case-sensitive by default
+        let result = ctx.eval("
+            var pattern = \"HELLO\" + \"\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            return re.test(str);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_regexp_test_case_insensitive() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Case-insensitive with 'i' flag
+        let result = ctx.eval("
+            var pattern = \"HELLO\" + \"\";
+            var flags = \"\" + \"i\";
+            var re = new RegExp(pattern, flags);
+            var str = \"hello\" + \" world\";
+            return re.test(str);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_regexp_exec_match() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // exec returns array on match
+        let result = ctx.eval("
+            var pattern = \"wor\" + \"ld\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            var match = re.exec(str);
+            return match[0];
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_regexp_exec_no_match() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // exec returns null on no match
+        let result = ctx.eval("
+            var pattern = \"xyz\" + \"\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            var match = re.exec(str);
+            return match === null ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_regexp_digit_pattern() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test with digit pattern
+        let result = ctx.eval("
+            var pattern = \"[0-9]\" + \"+\";
+            var re = new RegExp(pattern);
+            var str = \"abc\" + \"123def\";
+            return re.test(str);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    // ========================================
     // Boolean Tests
     // ========================================
 

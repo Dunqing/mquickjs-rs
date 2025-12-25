@@ -36,6 +36,8 @@ pub const BUILTIN_STRING: u32 = 11;
 pub const BUILTIN_OBJECT: u32 = 12;
 /// Array object index
 pub const BUILTIN_ARRAY: u32 = 13;
+/// RegExp object index
+pub const BUILTIN_REGEXP: u32 = 14;
 
 /// Native function signature
 ///
@@ -381,6 +383,8 @@ pub struct Interpreter {
     /// Error objects created during execution
     /// Stores (error_type, message) pairs
     error_objects: Vec<ErrorObject>,
+    /// RegExp objects created during execution
+    regex_objects: Vec<RegExpObject>,
     /// Current compile-time string constants (set during bytecode execution)
     /// Used by native functions to look up compile-time strings
     current_string_constants: Option<*const Vec<String>>,
@@ -396,6 +400,32 @@ pub struct ErrorObject {
     pub name: String,
     /// Error message
     pub message: String,
+}
+
+/// RegExp object storage
+#[derive(Clone)]
+pub struct RegExpObject {
+    /// The compiled regex pattern
+    pub regex: regex::Regex,
+    /// Original pattern string
+    pub pattern: String,
+    /// Flags string (e.g., "gi")
+    pub flags: String,
+    /// Global flag
+    pub global: bool,
+    /// Case-insensitive flag
+    pub ignore_case: bool,
+    /// Multiline flag
+    pub multiline: bool,
+}
+
+impl std::fmt::Debug for RegExpObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegExpObject")
+            .field("pattern", &self.pattern)
+            .field("flags", &self.flags)
+            .finish()
+    }
 }
 
 impl Interpreter {
@@ -419,6 +449,7 @@ impl Interpreter {
             for_of_iterators: Vec::new(),
             native_functions: Vec::new(),
             error_objects: Vec::new(),
+            regex_objects: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
         };
@@ -441,6 +472,7 @@ impl Interpreter {
             for_of_iterators: Vec::new(),
             native_functions: Vec::new(),
             error_objects: Vec::new(),
+            regex_objects: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
         };
@@ -1638,6 +1670,73 @@ impl Interpreter {
                             self.stack.push(Value::error_object(error_idx));
                             continue;
                         }
+
+                        // Check if this is the RegExp constructor
+                        if builtin_idx == BUILTIN_REGEXP {
+                            // Get pattern from first argument
+                            let pattern = if let Some(pattern_val) = args.first() {
+                                if let Some(str_idx) = pattern_val.to_string_idx() {
+                                    self.get_string_by_idx(str_idx)
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_default()
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+
+                            // Get flags from second argument (if present)
+                            let flags = if let Some(flags_val) = args.get(1) {
+                                if let Some(str_idx) = flags_val.to_string_idx() {
+                                    self.get_string_by_idx(str_idx)
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_default()
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+
+                            // Parse flags
+                            let global = flags.contains('g');
+                            let ignore_case = flags.contains('i');
+                            let multiline = flags.contains('m');
+
+                            // Build regex pattern with flags
+                            let mut regex_pattern = String::new();
+                            if ignore_case || multiline {
+                                regex_pattern.push_str("(?");
+                                if ignore_case { regex_pattern.push('i'); }
+                                if multiline { regex_pattern.push('m'); }
+                                regex_pattern.push(')');
+                            }
+                            regex_pattern.push_str(&pattern);
+
+                            // Compile the regex
+                            match regex::Regex::new(&regex_pattern) {
+                                Ok(regex) => {
+                                    let regex_idx = self.regex_objects.len() as u32;
+                                    self.regex_objects.push(RegExpObject {
+                                        regex,
+                                        pattern,
+                                        flags,
+                                        global,
+                                        ignore_case,
+                                        multiline,
+                                    });
+                                    self.stack.push(Value::regexp_object(regex_idx));
+                                }
+                                Err(e) => {
+                                    // Invalid regex - return a SyntaxError
+                                    return Err(InterpreterError::InternalError(
+                                        format!("Invalid regular expression: {}", e)
+                                    ));
+                                }
+                            }
+                            continue;
+                        }
                     }
 
                     // Create a new object for 'this', storing the constructor reference for instanceof
@@ -1922,6 +2021,7 @@ impl Interpreter {
                         "ReferenceError" => Some(Value::builtin_object(BUILTIN_REFERENCE_ERROR)),
                         "SyntaxError" => Some(Value::builtin_object(BUILTIN_SYNTAX_ERROR)),
                         "RangeError" => Some(Value::builtin_object(BUILTIN_RANGE_ERROR)),
+                        "RegExp" => Some(Value::builtin_object(BUILTIN_REGEXP)),
                         _ => self.get_native_func(name),
                     };
 
@@ -2126,6 +2226,10 @@ impl Interpreter {
                         // Error object property access
                         let val = self.get_error_property(err_idx, prop_name);
                         self.stack.push(val);
+                    } else if let Some(regex_idx) = obj.to_regexp_object_idx() {
+                        // RegExp object property access
+                        let val = self.get_regexp_property(regex_idx, prop_name);
+                        self.stack.push(val);
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         // Get property from regular object
                         let val = self.object_get_property(obj_idx, prop_name);
@@ -2162,6 +2266,8 @@ impl Interpreter {
                         self.get_builtin_property(builtin_idx, prop_name)
                     } else if obj.is_array() {
                         self.get_array_property(obj, prop_name)
+                    } else if let Some(regex_idx) = obj.to_regexp_object_idx() {
+                        self.get_regexp_property(regex_idx, prop_name)
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         self.object_get_property(obj_idx, prop_name)
                     } else if obj.is_string() {
@@ -2929,6 +3035,27 @@ impl Interpreter {
         }
     }
 
+    /// Get a property from a RegExp object
+    fn get_regexp_property(&self, regex_idx: u32, prop_name: &str) -> Value {
+        if let Some(re) = self.regex_objects.get(regex_idx as usize) {
+            match prop_name {
+                "test" => self.get_native_func("RegExp.prototype.test").unwrap_or(Value::undefined()),
+                "exec" => self.get_native_func("RegExp.prototype.exec").unwrap_or(Value::undefined()),
+                "global" => Value::bool(re.global),
+                "ignoreCase" => Value::bool(re.ignore_case),
+                "multiline" => Value::bool(re.multiline),
+                "source" => {
+                    // Return pattern as a string - but we need mutable access for runtime strings
+                    // For now, just return undefined
+                    Value::undefined()
+                }
+                _ => Value::undefined(),
+            }
+        } else {
+            Value::undefined()
+        }
+    }
+
     /// Get a property from a builtin object (Math, JSON, etc.)
     fn get_builtin_property(&self, builtin_idx: u32, prop_name: &str) -> Value {
         match builtin_idx {
@@ -3184,6 +3311,10 @@ impl Interpreter {
 
         // Date methods
         self.register_native("Date.now", native_date_now, 0);
+
+        // RegExp methods
+        self.register_native("RegExp.prototype.test", native_regexp_test, 1);
+        self.register_native("RegExp.prototype.exec", native_regexp_exec, 1);
 
         // Object static methods
         self.register_native("Object.keys", native_object_keys, 1);
@@ -4836,6 +4967,87 @@ fn native_date_now(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> 
     let max_val = 1 << 30; // 2^30 = 1073741824
 
     Ok(Value::int((millis % max_val) as i32))
+}
+
+// ===========================================
+// RegExp Methods
+// ===========================================
+
+/// RegExp.prototype.test - tests if the regex matches the string
+fn native_regexp_test(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let regex_idx = this.to_regexp_object_idx()
+        .ok_or_else(|| "test called on non-RegExp".to_string())?;
+
+    let re = interp.regex_objects.get(regex_idx as usize)
+        .ok_or_else(|| "invalid RegExp object".to_string())?
+        .clone();
+
+    // Get string to test
+    let test_str = if let Some(str_val) = args.first() {
+        if let Some(str_idx) = str_val.to_string_idx() {
+            interp.get_string_by_idx(str_idx)
+                .ok_or_else(|| "invalid string".to_string())?
+                .to_string()
+        } else if let Some(n) = str_val.to_i32() {
+            n.to_string()
+        } else {
+            "undefined".to_string()
+        }
+    } else {
+        "undefined".to_string()
+    };
+
+    Ok(Value::bool(re.regex.is_match(&test_str)))
+}
+
+/// RegExp.prototype.exec - executes the regex and returns match result
+fn native_regexp_exec(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let regex_idx = this.to_regexp_object_idx()
+        .ok_or_else(|| "exec called on non-RegExp".to_string())?;
+
+    let re = interp.regex_objects.get(regex_idx as usize)
+        .ok_or_else(|| "invalid RegExp object".to_string())?
+        .clone();
+
+    // Get string to match
+    let match_str = if let Some(str_val) = args.first() {
+        if let Some(str_idx) = str_val.to_string_idx() {
+            interp.get_string_by_idx(str_idx)
+                .ok_or_else(|| "invalid string".to_string())?
+                .to_string()
+        } else if let Some(n) = str_val.to_i32() {
+            n.to_string()
+        } else {
+            "undefined".to_string()
+        }
+    } else {
+        "undefined".to_string()
+    };
+
+    // Find the match
+    if let Some(m) = re.regex.find(&match_str) {
+        // Create result array with matched string
+        let matched = m.as_str().to_string();
+        let str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(matched);
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(vec![Value::string(str_idx)]);
+
+        // Create result object with index and input properties
+        let _result_obj_idx = interp.objects.len() as u32;
+        interp.objects.push(crate::vm::interpreter::ObjectInstance {
+            constructor: None,
+            properties: vec![
+                ("index".to_string(), Value::int(m.start() as i32)),
+            ],
+        });
+
+        // For now, just return the array (input property would require more work)
+        Ok(Value::array_idx(arr_idx))
+    } else {
+        Ok(Value::null())
+    }
 }
 
 // ===========================================

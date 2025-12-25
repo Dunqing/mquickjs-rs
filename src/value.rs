@@ -75,6 +75,10 @@ pub const BUILTIN_OBJECT_MARKER: i32 = 1 << 21;
 /// When bit 20 is set, it's an error object index
 pub const ERROR_OBJECT_MARKER: i32 = 1 << 20;
 
+/// Marker bit for RegExp objects
+/// When bit 19 is set, it's a RegExp object index
+pub const REGEXP_OBJECT_MARKER: i32 = 1 << 19;
+
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -589,6 +593,33 @@ impl Value {
     pub const fn to_error_object_idx(self) -> Option<u32> {
         if self.is_error_object() {
             Some((self.0.get_special_value() & !ERROR_OBJECT_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Create a RegExp object Value from an index
+    #[inline]
+    pub const fn regexp_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | REGEXP_OBJECT_MARKER,
+        ))
+    }
+
+    /// Check if this is a RegExp object
+    #[inline]
+    pub const fn is_regexp_object(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & REGEXP_OBJECT_MARKER) != 0
+            && (self.0.get_special_value() & ERROR_OBJECT_MARKER) == 0
+    }
+
+    /// Get RegExp object index, returns None if not a RegExp object
+    #[inline]
+    pub const fn to_regexp_object_idx(self) -> Option<u32> {
+        if self.is_regexp_object() {
+            Some((self.0.get_special_value() & !REGEXP_OBJECT_MARKER) as u32)
         } else {
             None
         }
