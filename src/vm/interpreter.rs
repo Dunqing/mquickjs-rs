@@ -3229,6 +3229,7 @@ impl Interpreter {
             "toSorted" => self.get_native_func("Array.prototype.toSorted").unwrap_or(Value::undefined()),
             "toReversed" => self.get_native_func("Array.prototype.toReversed").unwrap_or(Value::undefined()),
             "with" => self.get_native_func("Array.prototype.with").unwrap_or(Value::undefined()),
+            "toSpliced" => self.get_native_func("Array.prototype.toSpliced").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3459,6 +3460,8 @@ impl Interpreter {
                     "isFrozen" => self.get_native_func("Object.isFrozen").unwrap_or(Value::undefined()),
                     "isSealed" => self.get_native_func("Object.isSealed").unwrap_or(Value::undefined()),
                     "getOwnPropertyNames" => self.get_native_func("Object.getOwnPropertyNames").unwrap_or(Value::undefined()),
+                    "fromEntries" => self.get_native_func("Object.fromEntries").unwrap_or(Value::undefined()),
+                    "hasOwn" => self.get_native_func("Object.hasOwn").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3622,6 +3625,7 @@ impl Interpreter {
         self.register_native("Array.prototype.toSorted", native_array_to_sorted, 0);
         self.register_native("Array.prototype.toReversed", native_array_to_reversed, 0);
         self.register_native("Array.prototype.with", native_array_with, 2);
+        self.register_native("Array.prototype.toSpliced", native_array_to_spliced, 2);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
@@ -3728,6 +3732,8 @@ impl Interpreter {
         self.register_native("Object.isFrozen", native_object_is_frozen, 1);
         self.register_native("Object.isSealed", native_object_is_sealed, 1);
         self.register_native("Object.getOwnPropertyNames", native_object_get_own_property_names, 1);
+        self.register_native("Object.fromEntries", native_object_from_entries, 1);
+        self.register_native("Object.hasOwn", native_object_has_own, 2);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -4696,6 +4702,49 @@ fn native_array_with(interp: &mut Interpreter, this: Value, args: &[Value]) -> R
 
     // Set the value
     arr_copy[actual_index as usize] = value;
+
+    // Create new array
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(arr_copy);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.toSpliced - returns new array with elements spliced (ES2023, non-mutating)
+fn native_array_to_spliced(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "toSpliced called on non-array".to_string())?;
+
+    // Clone the array
+    let mut arr_copy = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    let len = arr_copy.len() as i32;
+
+    // Get start index
+    let start = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let actual_start = if start < 0 {
+        (len + start).max(0) as usize
+    } else {
+        (start.min(len)) as usize
+    };
+
+    // Get delete count
+    let delete_count = args.get(1).and_then(|v| v.to_i32())
+        .map(|n| n.max(0) as usize)
+        .unwrap_or((len - actual_start as i32).max(0) as usize);
+    let actual_delete = delete_count.min(arr_copy.len() - actual_start);
+
+    // Get items to insert (remaining arguments)
+    let insert_items: Vec<Value> = args.iter().skip(2).copied().collect();
+
+    // Remove elements
+    arr_copy.drain(actual_start..actual_start + actual_delete);
+
+    // Insert new elements
+    for (i, item) in insert_items.into_iter().enumerate() {
+        arr_copy.insert(actual_start + i, item);
+    }
 
     // Create new array
     let new_arr_idx = interp.arrays.len() as u32;
@@ -6775,6 +6824,82 @@ fn native_object_get_own_property_names(interp: &mut Interpreter, _this: Value, 
     let arr_idx = interp.arrays.len() as u32;
     interp.arrays.push(Vec::new());
     Ok(Value::array_idx(arr_idx))
+}
+
+/// Object.fromEntries - creates object from array of [key, value] pairs
+fn native_object_from_entries(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let entries = args.first().copied().unwrap_or(Value::undefined());
+
+    let mut obj = ObjectInstance::new();
+
+    if let Some(arr_idx) = entries.to_array_idx() {
+        // Clone the entries array
+        let entries_arr = interp.arrays.get(arr_idx as usize)
+            .ok_or_else(|| "invalid entries array".to_string())?
+            .clone();
+
+        for entry in entries_arr {
+            if let Some(pair_idx) = entry.to_array_idx() {
+                let pair = interp.arrays.get(pair_idx as usize)
+                    .ok_or_else(|| "invalid entry pair".to_string())?
+                    .clone();
+
+                if pair.len() >= 2 {
+                    // Get the key as string
+                    let key = if let Some(str_idx) = pair[0].to_string_idx() {
+                        interp.get_string_by_idx(str_idx)
+                            .map(|s| s.to_string())
+                            .unwrap_or_default()
+                    } else if let Some(n) = pair[0].to_i32() {
+                        n.to_string()
+                    } else {
+                        continue;
+                    };
+
+                    obj.properties.push((key, pair[1]));
+                }
+            }
+        }
+    }
+
+    let obj_idx = interp.objects.len() as u32;
+    interp.objects.push(obj);
+    Ok(Value::object_idx(obj_idx))
+}
+
+/// Object.hasOwn - check if object has own property (ES2022)
+fn native_object_has_own(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        let has_prop = interp.objects
+            .get(obj_idx as usize)
+            .map(|o| o.properties.iter().any(|(k, _)| k == &prop_name))
+            .unwrap_or(false);
+        return Ok(Value::bool(has_prop));
+    } else if let Some(arr_idx) = obj.to_array_idx() {
+        // For arrays, check if index exists
+        if let Ok(idx) = prop_name.parse::<usize>() {
+            let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+            return Ok(Value::bool(idx < len));
+        } else if prop_name == "length" {
+            return Ok(Value::bool(true));
+        }
+    }
+
+    Ok(Value::bool(false))
 }
 
 // ===========================================

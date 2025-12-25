@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 383 passing
+**Test Count**: 391 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -507,5 +507,13 @@
   - String.prototype.codePointAt(index) - get unicode code point at position
   - String.fromCodePoint(...codes) - create string from code points
 - 12 new tests
+
+**Stage 6.11 Object.fromEntries, Object.hasOwn, Array.toSpliced**:
+- Object methods:
+  - Object.fromEntries(entries) - creates object from array of [key, value] pairs
+  - Object.hasOwn(obj, prop) - check if object has own property (ES2022)
+- ES2023 Array method:
+  - Array.prototype.toSpliced(start, deleteCount, ...items) - returns new spliced array (non-mutating)
+- 8 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

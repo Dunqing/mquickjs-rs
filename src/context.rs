@@ -4192,4 +4192,108 @@ mod tests {
         ").unwrap();
         assert!(ctx.value_to_string(&result).unwrap().contains("ABC"));
     }
+
+    // =========================================================================
+    // Stage 6.11 - Object.fromEntries, Object.hasOwn, Array.toSpliced
+    // =========================================================================
+
+    #[test]
+    fn test_object_from_entries() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var entries = [[0, 'a'], [1, 'b']];
+            var obj = Object.fromEntries(entries);
+            return obj[0] + obj[1];
+        ").unwrap();
+        // Should return 'ab'
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_object_has_own() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return Object.hasOwn(obj, 'x');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_has_own_missing() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return Object.hasOwn(obj, 'y');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_object_has_own_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return Object.hasOwn(arr, 1);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_array_to_spliced() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            var spliced = arr.toSpliced(1, 2, 10, 20);
+            return spliced[0] + spliced[1] + spliced[2] + spliced[3] + spliced[4];
+        ").unwrap();
+        // [1, 10, 20, 4, 5] -> 1 + 10 + 20 + 4 + 5 = 40
+        assert_eq!(result.to_i32(), Some(40));
+    }
+
+    #[test]
+    fn test_array_to_spliced_original_unchanged() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var spliced = arr.toSpliced(1, 1, 10);
+            return arr[1];
+        ").unwrap();
+        // Original unchanged
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_array_to_spliced_insert_only() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var spliced = arr.toSpliced(1, 0, 10, 20);
+            return spliced.length;
+        ").unwrap();
+        // [1, 10, 20, 2, 3] -> length 5
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_array_to_spliced_delete_only() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            var spliced = arr.toSpliced(1, 2);
+            return spliced.length;
+        ").unwrap();
+        // [1, 4, 5] -> length 3
+        assert_eq!(result.to_i32(), Some(3));
+    }
 }
