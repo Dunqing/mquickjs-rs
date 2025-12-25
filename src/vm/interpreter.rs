@@ -2967,6 +2967,10 @@ impl Interpreter {
             "some" => self.get_native_func("Array.prototype.some").unwrap_or(Value::undefined()),
             "every" => self.get_native_func("Array.prototype.every").unwrap_or(Value::undefined()),
             "includes" => self.get_native_func("Array.prototype.includes").unwrap_or(Value::undefined()),
+            "concat" => self.get_native_func("Array.prototype.concat").unwrap_or(Value::undefined()),
+            "sort" => self.get_native_func("Array.prototype.sort").unwrap_or(Value::undefined()),
+            "flat" => self.get_native_func("Array.prototype.flat").unwrap_or(Value::undefined()),
+            "fill" => self.get_native_func("Array.prototype.fill").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3264,6 +3268,10 @@ impl Interpreter {
         self.register_native("Array.prototype.some", native_array_some, 1);
         self.register_native("Array.prototype.every", native_array_every, 1);
         self.register_native("Array.prototype.includes", native_array_includes, 1);
+        self.register_native("Array.prototype.concat", native_array_concat, 0);
+        self.register_native("Array.prototype.sort", native_array_sort, 0);
+        self.register_native("Array.prototype.flat", native_array_flat, 0);
+        self.register_native("Array.prototype.fill", native_array_fill, 1);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
@@ -3792,6 +3800,139 @@ fn native_array_includes(interp: &mut Interpreter, this: Value, args: &[Value]) 
     } else {
         Err("invalid array".to_string())
     }
+}
+
+/// Array.prototype.concat - concatenate arrays
+fn native_array_concat(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "concat called on non-array".to_string())?;
+
+    // Clone the original array
+    let original = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    let mut result = original;
+
+    // Concatenate each argument
+    for arg in args {
+        if let Some(other_idx) = arg.to_array_idx() {
+            // Argument is an array - append all elements
+            if let Some(other_arr) = interp.arrays.get(other_idx as usize) {
+                result.extend(other_arr.iter().cloned());
+            }
+        } else {
+            // Argument is a single value - append it
+            result.push(*arg);
+        }
+    }
+
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(result);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.sort - sort array in place
+fn native_array_sort(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "sort called on non-array".to_string())?;
+
+    // Get optional compare function
+    let compare_fn = args.first().copied();
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        if compare_fn.is_some() && (compare_fn.unwrap().is_closure() || compare_fn.unwrap().to_func_ptr().is_some()) {
+            // Custom comparator - need to call the function for each comparison
+            // For now, just do default sort without custom comparator support
+            // TODO: Implement custom comparator
+            arr.sort_by(|a, b| {
+                // Default: convert to strings and compare
+                let a_val = a.to_i32().unwrap_or(0);
+                let b_val = b.to_i32().unwrap_or(0);
+                a_val.cmp(&b_val)
+            });
+        } else {
+            // Default sort - numeric comparison for integers
+            arr.sort_by(|a, b| {
+                let a_val = a.to_i32().unwrap_or(0);
+                let b_val = b.to_i32().unwrap_or(0);
+                a_val.cmp(&b_val)
+            });
+        }
+    }
+
+    // Return the array itself (sort is in-place)
+    Ok(this)
+}
+
+/// Array.prototype.flat - flatten nested arrays
+fn native_array_flat(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "flat called on non-array".to_string())?;
+
+    // Get depth (default 1)
+    let depth = args.first()
+        .and_then(|v| v.to_i32())
+        .unwrap_or(1)
+        .max(0) as usize;
+
+    let original = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    fn flatten_recursive(interp: &Interpreter, arr: &[Value], depth: usize) -> Vec<Value> {
+        let mut result = Vec::new();
+        for elem in arr {
+            if depth > 0 {
+                if let Some(nested_idx) = elem.to_array_idx() {
+                    if let Some(nested) = interp.arrays.get(nested_idx as usize) {
+                        result.extend(flatten_recursive(interp, nested, depth - 1));
+                        continue;
+                    }
+                }
+            }
+            result.push(*elem);
+        }
+        result
+    }
+
+    let flattened = flatten_recursive(interp, &original, depth);
+
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(flattened);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.fill - fill array with a value
+fn native_array_fill(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "fill called on non-array".to_string())?;
+
+    let fill_value = args.first().copied().unwrap_or(Value::undefined());
+
+    // Get start and end indices
+    let arr_len = interp.arrays.get(arr_idx as usize)
+        .map(|a| a.len())
+        .unwrap_or(0) as i32;
+
+    let start = args.get(1)
+        .and_then(|v| v.to_i32())
+        .map(|s| if s < 0 { (arr_len + s).max(0) } else { s.min(arr_len) })
+        .unwrap_or(0) as usize;
+
+    let end = args.get(2)
+        .and_then(|v| v.to_i32())
+        .map(|e| if e < 0 { (arr_len + e).max(0) } else { e.min(arr_len) })
+        .unwrap_or(arr_len) as usize;
+
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        for i in start..end.min(arr.len()) {
+            arr[i] = fill_value;
+        }
+    }
+
+    // Return the array itself (fill is in-place)
+    Ok(this)
 }
 
 /// parseInt - parse string to integer

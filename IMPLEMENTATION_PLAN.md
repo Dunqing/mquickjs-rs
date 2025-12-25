@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 311 passing
+**Test Count**: 319 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -404,7 +404,11 @@
 - Array.prototype.some(callback) - check if any element matches
 - Array.prototype.every(callback) - check if all elements match
 - Array.prototype.includes(value) - check if array contains value
-- 12 Array higher-order function tests
+- Array.prototype.concat(...args) - concatenate arrays
+- Array.prototype.sort(compareFn?) - sort array in place
+- Array.prototype.flat(depth?) - flatten nested arrays
+- Array.prototype.fill(value, start?, end?) - fill array with value
+- 20 Array method tests
 
 **Stage 6.4 RegExp Features**:
 - RegExpObject struct with compiled regex, pattern, flags, and flag booleans

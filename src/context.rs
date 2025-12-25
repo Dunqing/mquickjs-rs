@@ -3264,4 +3264,102 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
+
+    #[test]
+    fn test_array_concat() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr1 = [1, 2, 3];
+            var arr2 = [4, 5, 6];
+            var result = arr1.concat(arr2);
+            return result.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6));
+    }
+
+    #[test]
+    fn test_array_concat_values() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr1 = [1, 2, 3];
+            var arr2 = [4, 5, 6];
+            var result = arr1.concat(arr2);
+            return result[3] + result[4] + result[5];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(15)); // 4 + 5 + 6
+    }
+
+    #[test]
+    fn test_array_concat_single_value() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var result = arr.concat(4);
+            return result.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(4));
+    }
+
+    #[test]
+    fn test_array_sort() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [3, 1, 4, 1, 5, 9, 2, 6];
+            arr.sort();
+            return arr[0];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_sort_returns_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [3, 1, 2];
+            var sorted = arr.sort();
+            return sorted[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_flat() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, [2, 3], 4];
+            var flat = arr.flat();
+            return flat.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(4));
+    }
+
+    #[test]
+    fn test_array_fill() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            arr.fill(0);
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_array_fill_range() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            arr.fill(0, 1, 4);
+            return arr[0] + arr[1] + arr[4];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6)); // 1 + 0 + 5
+    }
 }
