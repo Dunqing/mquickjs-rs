@@ -14,21 +14,9 @@ mod collector;
 pub use allocator::{Heap, MemoryTag};
 pub use collector::GcRef;
 
-use crate::context::MemoryStats;
-
 impl Heap {
     /// Run garbage collection
     pub fn collect(&mut self) {
         collector::collect(self);
-    }
-
-    /// Get memory statistics
-    pub fn stats(&self) -> MemoryStats {
-        MemoryStats {
-            total: self.total_size,
-            heap_used: self.heap_used(),
-            stack_used: self.stack_used(),
-            free: self.free_space(),
-        }
     }
 }

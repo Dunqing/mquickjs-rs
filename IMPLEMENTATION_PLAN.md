@@ -117,12 +117,12 @@
 **Goal**: Usable command-line tool
 
 - [x] 8.1 Implement CLI skeleton
-- [ ] 8.2 Implement argument parsing
-- [ ] 8.3 Implement line editing
-- [ ] 8.4 Implement bytecode serialization
-- [ ] 8.5 Implement memory stats
+- [x] 8.2 Implement argument parsing (-h, -e, -i, -I, -d, --memory-limit)
+- [ ] 8.3 Implement line editing (optional)
+- [ ] 8.4 Implement bytecode serialization (optional)
+- [x] 8.5 Implement memory stats (dump_memory_stats, MemoryStats struct)
 
-**Status**: In Progress
+**Status**: Complete (core features)
 
 ---
 
@@ -141,7 +141,7 @@
 
 ## Current Progress
 
-**Last Updated**: Stage 5-6 In Progress (Type coercion complete)
+**Last Updated**: Stage 8 Complete (CLI with memory stats)
 
 **Files Created/Updated**:
 - `src/lib.rs` - Main library entry
@@ -161,6 +161,14 @@
 - `src/bin/mqjs.rs` - REPL binary
 
 **Test Count**: 339 passing
+
+**Stage 8 CLI Features**:
+- Complete argument parsing (-h, -e, -i, -I, -d, --memory-limit)
+- Memory limit supports k/K, m/M suffixes (e.g., --memory-limit 512k)
+- Memory stats display (heap size, used, runtime strings, arrays, objects, closures, etc.)
+- Include file support (-I file)
+- Interactive mode (-i) after script execution
+- REPL with prompt and EOF handling
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser

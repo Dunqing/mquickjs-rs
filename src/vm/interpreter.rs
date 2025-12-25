@@ -564,6 +564,25 @@ impl TypedArrayObject {
     }
 }
 
+/// Statistics about interpreter memory usage
+#[derive(Debug, Clone, Default)]
+pub struct InterpreterStats {
+    /// Number of runtime strings
+    pub runtime_strings: usize,
+    /// Number of arrays
+    pub arrays: usize,
+    /// Number of objects
+    pub objects: usize,
+    /// Number of closures
+    pub closures: usize,
+    /// Number of error objects
+    pub error_objects: usize,
+    /// Number of regex objects
+    pub regex_objects: usize,
+    /// Number of typed arrays
+    pub typed_arrays: usize,
+}
+
 impl Interpreter {
     /// Default stack capacity
     const DEFAULT_STACK_SIZE: usize = 1024;
@@ -616,6 +635,19 @@ impl Interpreter {
         };
         interp.register_builtins();
         interp
+    }
+
+    /// Get memory statistics from the interpreter
+    pub fn get_stats(&self) -> InterpreterStats {
+        InterpreterStats {
+            runtime_strings: self.runtime_strings.len(),
+            arrays: self.arrays.len(),
+            objects: self.objects.len(),
+            closures: self.closures.len(),
+            error_objects: self.error_objects.len(),
+            regex_objects: self.regex_objects.len(),
+            typed_arrays: self.typed_arrays.len(),
+        }
     }
 
     /// Closure index marker (indices into closures vec are stored as negative values)

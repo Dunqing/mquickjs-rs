@@ -53,6 +53,33 @@ impl From<CompileError> for EvalError {
     }
 }
 
+/// Memory usage statistics
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MemoryStats {
+    /// Total memory size
+    pub heap_size: usize,
+    /// Currently used heap memory
+    pub used: usize,
+    /// Currently used stack memory
+    pub stack_used: usize,
+    /// Free memory available
+    pub free: usize,
+    /// Number of runtime strings
+    pub runtime_strings: usize,
+    /// Number of arrays
+    pub arrays: usize,
+    /// Number of objects
+    pub objects: usize,
+    /// Number of closures
+    pub closures: usize,
+    /// Number of error objects
+    pub error_objects: usize,
+    /// Number of regex objects
+    pub regex_objects: usize,
+    /// Number of typed arrays
+    pub typed_arrays: usize,
+}
+
 impl Context {
     /// Create a new JavaScript context with the given memory size
     ///
@@ -153,6 +180,24 @@ impl Context {
         self.heap.collect();
     }
 
+    /// Get memory usage statistics
+    pub fn memory_stats(&self) -> MemoryStats {
+        let interp_stats = self.interpreter.get_stats();
+        MemoryStats {
+            heap_size: self.heap.total_size,
+            used: self.heap.heap_used(),
+            stack_used: self.heap.stack_used(),
+            free: self.heap.free_space(),
+            runtime_strings: interp_stats.runtime_strings,
+            arrays: interp_stats.arrays,
+            objects: interp_stats.objects,
+            closures: interp_stats.closures,
+            error_objects: interp_stats.error_objects,
+            regex_objects: interp_stats.regex_objects,
+            typed_arrays: interp_stats.typed_arrays,
+        }
+    }
+
     /// Get the current exception (if any)
     pub fn get_exception(&self) -> Value {
         self.current_exception
@@ -162,24 +207,6 @@ impl Context {
     pub fn clear_exception(&mut self) {
         self.current_exception = Value::undefined();
     }
-
-    /// Get memory usage statistics
-    pub fn memory_stats(&self) -> MemoryStats {
-        self.heap.stats()
-    }
-}
-
-/// Memory usage statistics
-#[derive(Debug, Clone, Copy)]
-pub struct MemoryStats {
-    /// Total memory size
-    pub total: usize,
-    /// Currently used heap memory
-    pub heap_used: usize,
-    /// Currently used stack memory
-    pub stack_used: usize,
-    /// Free memory available
-    pub free: usize,
 }
 
 #[cfg(test)]
@@ -190,7 +217,7 @@ mod tests {
     fn test_create_context() {
         let ctx = Context::new(64 * 1024);
         let stats = ctx.memory_stats();
-        assert!(stats.total >= 64 * 1024);
+        assert!(stats.heap_size >= 64 * 1024);
     }
 
     #[test]
