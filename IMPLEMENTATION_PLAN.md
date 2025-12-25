@@ -72,7 +72,7 @@
 **Goal**: Essential JavaScript built-in objects
 
 - [x] 5.1 Implement `Object` constructor and prototype (partial: Object.keys, Object.values, Object.entries)
-- [ ] 5.2 Implement `Function` prototype
+- [x] 5.2 Implement `Function` prototype (call, apply, bind)
 - [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length, Array.isArray)
 - [x] 5.4 Implement `String` constructor and methods (length, charAt, indexOf, slice, substring, toUpperCase, toLowerCase, trim, split)
 - [x] 5.5 Implement `Number` constructor and methods (isInteger, isNaN, isFinite, MAX_VALUE, MIN_VALUE)
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 273 passing
+**Test Count**: 278 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -375,4 +375,13 @@
 - Array.isArray(value) - check if value is an array
 - 6 Object/Array static method tests
 
-**Next Action**: Implement Function prototype or RegExp
+**Stage 5.2 Function.prototype Methods**:
+- Function.prototype.call(thisArg, ...args) - call function with specified this
+- Function.prototype.apply(thisArg, argsArray) - call function with array of args
+- Function.prototype.bind(thisArg, ...args) - create bound function
+- call_value() method for calling function values from native code
+- nested_call_target_depth field for proper return handling in nested calls
+- get_function_property() to dispatch prototype method lookups
+- 5 Function.prototype tests
+
+**Next Action**: Implement RegExp or more Array methods

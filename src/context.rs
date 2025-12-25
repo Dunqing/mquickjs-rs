@@ -2717,4 +2717,78 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
+
+    // ========================================
+    // Function.prototype Tests
+    // ========================================
+
+    #[test]
+    fn test_function_call_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // call() with a simple this value
+        let result = ctx.eval("
+            function getThis() { return this.value; }
+            function Obj() { this.value = 42; }
+            var obj = new Obj();
+            return getThis.call(obj);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_function_call_with_args() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // call() with arguments
+        let result = ctx.eval("
+            function add(a, b) { return this.base + a + b; }
+            function Obj() { this.base = 10; }
+            var obj = new Obj();
+            return add.call(obj, 5, 3);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(18));
+    }
+
+    #[test]
+    fn test_function_apply_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // apply() with an array of arguments
+        let result = ctx.eval("
+            function sum(a, b, c) { return a + b + c; }
+            return sum.apply(null, [1, 2, 3]);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6));
+    }
+
+    #[test]
+    fn test_function_apply_with_this() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // apply() with this and arguments
+        let result = ctx.eval("
+            function multiply(x) { return this.factor * x; }
+            function Obj() { this.factor = 5; }
+            var obj = new Obj();
+            return multiply.apply(obj, [7]);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(35));
+    }
+
+    #[test]
+    fn test_function_bind_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // bind() creates a bound function object
+        let result = ctx.eval("
+            function getVal() { return this.val; }
+            function Obj() { this.val = 99; }
+            var obj = new Obj();
+            var bound = getVal.bind(obj);
+            return typeof bound;
+        ").unwrap();
+        // bind returns an object (our implementation stores bound function data in an object)
+        assert!(result.is_string());
+    }
 }

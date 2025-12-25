@@ -384,6 +384,9 @@ pub struct Interpreter {
     /// Current compile-time string constants (set during bytecode execution)
     /// Used by native functions to look up compile-time strings
     current_string_constants: Option<*const Vec<String>>,
+    /// Target call stack depth for nested call_value invocations
+    /// When set, do_return will return early when reaching this depth
+    nested_call_target_depth: Option<usize>,
 }
 
 /// Error object storage
@@ -417,6 +420,7 @@ impl Interpreter {
             native_functions: Vec::new(),
             error_objects: Vec::new(),
             current_string_constants: None,
+            nested_call_target_depth: None,
         };
         interp.register_builtins();
         interp
@@ -438,6 +442,7 @@ impl Interpreter {
             native_functions: Vec::new(),
             error_objects: Vec::new(),
             current_string_constants: None,
+            nested_call_target_depth: None,
         };
         interp.register_builtins();
         interp
@@ -580,6 +585,86 @@ impl Interpreter {
     /// Get a mutable closure by index
     fn get_closure_mut(&mut self, idx: u32) -> Option<&mut ClosureData> {
         self.closures.get_mut(idx as usize)
+    }
+
+    /// Call a function value with the given `this` value and arguments
+    ///
+    /// This handles closures, function pointers, and function indices.
+    pub fn call_value(
+        &mut self,
+        func: Value,
+        this_val: Value,
+        args: &[Value],
+    ) -> InterpreterResult<Value> {
+        // Save current call stack depth to return when we're back to this level
+        let saved_target = self.nested_call_target_depth;
+        self.nested_call_target_depth = Some(self.call_stack.len());
+
+        let result = self.call_value_inner(func, this_val, args);
+
+        // Restore the previous target depth
+        self.nested_call_target_depth = saved_target;
+
+        result
+    }
+
+    /// Inner implementation of call_value
+    fn call_value_inner(
+        &mut self,
+        func: Value,
+        this_val: Value,
+        args: &[Value],
+    ) -> InterpreterResult<Value> {
+        // Handle closures
+        if let Some(closure_idx) = func.to_closure_idx() {
+            let closure = self.get_closure(closure_idx).ok_or_else(|| {
+                InterpreterError::InternalError(format!("invalid closure index: {}", closure_idx))
+            })?;
+            let bytecode = unsafe { &*closure.bytecode };
+
+            // Check recursion limit
+            if self.call_stack.len() >= self.max_recursion {
+                return Err(InterpreterError::InternalError(
+                    "maximum call stack size exceeded".to_string(),
+                ));
+            }
+
+            let frame_ptr = self.stack.len();
+
+            // Push arguments (pad with undefined if needed)
+            for i in 0..bytecode.arg_count as usize {
+                let arg = args.get(i).copied().unwrap_or(Value::undefined());
+                self.stack.push(arg);
+            }
+
+            // Allocate space for locals (beyond arguments)
+            let extra_locals = bytecode.local_count.saturating_sub(bytecode.arg_count);
+            for _ in 0..extra_locals {
+                self.stack.push(Value::undefined());
+            }
+
+            // Create frame with closure
+            let frame = CallFrame::new_closure(
+                bytecode as *const _,
+                frame_ptr,
+                args.len().min(u16::MAX as usize) as u16,
+                this_val,
+                func,
+                closure_idx as usize,
+            );
+            self.call_stack.push(frame);
+
+            // Run the interpreter loop
+            return self.run();
+        }
+
+        // Handle function pointers
+        if let Some(ptr) = func.to_func_ptr() {
+            let bytecode = unsafe { &*ptr };
+            return self.call_function(bytecode, this_val, args);
+        }
+
+        Err(InterpreterError::TypeError("not a function".to_string()))
     }
 
     /// Execute bytecode and return the result
@@ -2081,6 +2166,9 @@ impl Interpreter {
                         self.object_get_property(obj_idx, prop_name)
                     } else if obj.is_string() {
                         self.get_string_property(obj, prop_name)
+                    } else if obj.is_closure() || obj.to_func_ptr().is_some() {
+                        // Function.prototype methods (call, apply, bind)
+                        self.get_function_property(prop_name)
                     } else {
                         Value::undefined()
                     };
@@ -2429,6 +2517,14 @@ impl Interpreter {
         // If there are no more frames, this is the final result
         if self.call_stack.is_empty() {
             return Ok(final_result);
+        }
+
+        // Check if we've reached the target depth for a nested call_value
+        if let Some(target_depth) = self.nested_call_target_depth {
+            if self.call_stack.len() == target_depth {
+                // Don't push result or continue - just return to call_value
+                return Ok(final_result);
+            }
         }
 
         // Otherwise, push the result for the caller and continue
@@ -2806,6 +2902,16 @@ impl Interpreter {
         }
     }
 
+    /// Get a property from a function (Function.prototype methods)
+    fn get_function_property(&self, prop_name: &str) -> Value {
+        match prop_name {
+            "call" => self.get_native_func("Function.prototype.call").unwrap_or(Value::undefined()),
+            "apply" => self.get_native_func("Function.prototype.apply").unwrap_or(Value::undefined()),
+            "bind" => self.get_native_func("Function.prototype.bind").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
     /// Get a property from a builtin object (Math, JSON, etc.)
     fn get_builtin_property(&self, builtin_idx: u32, prop_name: &str) -> Value {
         match builtin_idx {
@@ -3052,6 +3158,11 @@ impl Interpreter {
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
+
+        // Function.prototype methods
+        self.register_native("Function.prototype.call", native_function_call, 0);
+        self.register_native("Function.prototype.apply", native_function_apply, 0);
+        self.register_native("Function.prototype.bind", native_function_bind, 0);
     }
 }
 
@@ -4254,6 +4365,92 @@ fn native_object_entries(interp: &mut Interpreter, _this: Value, args: &[Value])
 fn native_array_is_array(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let val = args.first().copied().unwrap_or(Value::undefined());
     Ok(Value::bool(val.is_array()))
+}
+
+// ===========================================
+// Function.prototype Methods
+// ===========================================
+
+/// Function.prototype.call - call function with specified this value and arguments
+/// Usage: func.call(thisArg, arg1, arg2, ...)
+fn native_function_call(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    // 'this' is the function to call
+    if !this.is_closure() && this.to_func_ptr().is_none() {
+        return Err("call() called on non-function".to_string());
+    }
+
+    // First argument is the new 'this' value
+    let new_this = args.first().copied().unwrap_or(Value::undefined());
+
+    // Remaining arguments are passed to the function
+    let call_args: Vec<Value> = args.iter().skip(1).copied().collect();
+
+    interp.call_value(this, new_this, &call_args)
+        .map_err(|e| e.to_string())
+}
+
+/// Function.prototype.apply - call function with specified this value and arguments array
+/// Usage: func.apply(thisArg, [argsArray])
+fn native_function_apply(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    // 'this' is the function to call
+    if !this.is_closure() && this.to_func_ptr().is_none() {
+        return Err("apply() called on non-function".to_string());
+    }
+
+    // First argument is the new 'this' value
+    let new_this = args.first().copied().unwrap_or(Value::undefined());
+
+    // Second argument should be an array of arguments
+    let call_args: Vec<Value> = if let Some(arr_val) = args.get(1) {
+        if let Some(arr_idx) = arr_val.to_array_idx() {
+            interp.get_array(arr_idx)
+                .map(|arr| arr.clone())
+                .unwrap_or_default()
+        } else if arr_val.is_undefined() || arr_val.is_null() {
+            Vec::new()
+        } else {
+            return Err("second argument to apply() must be an array".to_string());
+        }
+    } else {
+        Vec::new()
+    };
+
+    interp.call_value(this, new_this, &call_args)
+        .map_err(|e| e.to_string())
+}
+
+/// Function.prototype.bind - create a new function with bound this value
+/// Usage: func.bind(thisArg, arg1, arg2, ...) -> boundFunction
+/// Note: Returns a value that stores the bound function, this, and args
+fn native_function_bind(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    // 'this' is the function to bind
+    if !this.is_closure() && this.to_func_ptr().is_none() {
+        return Err("bind() called on non-function".to_string());
+    }
+
+    // Create a bound function object
+    // We store: original function, bound this, and bound args
+    let bound_this = args.first().copied().unwrap_or(Value::undefined());
+    let bound_args: Vec<Value> = args.iter().skip(1).copied().collect();
+
+    // Create an object to store the bound function info
+    let obj_idx = interp.objects.len() as u32;
+    let mut obj = ObjectInstance::new();
+    obj.properties.push(("__bound_func__".to_string(), this));
+    obj.properties.push(("__bound_this__".to_string(), bound_this));
+
+    // Store bound args in an array
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(bound_args);
+    obj.properties.push(("__bound_args__".to_string(), Value::array_idx(arr_idx)));
+
+    // Mark as bound function
+    obj.properties.push(("__is_bound__".to_string(), Value::bool(true)));
+
+    interp.objects.push(obj);
+
+    // Return as object (will be callable via special handling)
+    Ok(Value::object_idx(obj_idx))
 }
 
 impl Default for Interpreter {
