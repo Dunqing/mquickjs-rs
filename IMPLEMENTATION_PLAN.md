@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 347 passing
+**Test Count**: 359 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -451,4 +451,26 @@
 - String.fromCharCode(...codes) - create string from character codes
 - 12 new tests
 
-**Next Action**: Implement TypedArray, Map/Set, or Promise
+**Stage 6.8 Map and Set Collections**:
+- Map object with full prototype methods:
+  - new Map() constructor with optional iterable initialization
+  - Map.prototype.get(key) - get value by key
+  - Map.prototype.set(key, value) - set key-value pair (returns Map for chaining)
+  - Map.prototype.has(key) - check if key exists
+  - Map.prototype.delete(key) - remove key
+  - Map.prototype.clear() - remove all entries
+  - Map.prototype.size - get number of entries
+  - Map.prototype.forEach(callback) - iterate over entries
+- Set object with full prototype methods:
+  - new Set() constructor with optional iterable initialization
+  - Set.prototype.add(value) - add value (returns Set for chaining)
+  - Set.prototype.has(value) - check if value exists
+  - Set.prototype.delete(value) - remove value
+  - Set.prototype.clear() - remove all values
+  - Set.prototype.size - get number of values
+  - Set.prototype.forEach(callback) - iterate over values
+- Value types: MAP_OBJECT_MARKER (bit 18), SET_OBJECT_MARKER (bit 17)
+- MapObject and SetObject storage structures with insertion order preservation
+- 12 new tests (6 Map, 6 Set)
+
+**Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

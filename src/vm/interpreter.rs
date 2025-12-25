@@ -38,6 +38,10 @@ pub const BUILTIN_OBJECT: u32 = 12;
 pub const BUILTIN_ARRAY: u32 = 13;
 /// RegExp object index
 pub const BUILTIN_REGEXP: u32 = 14;
+/// Map object index
+pub const BUILTIN_MAP: u32 = 15;
+/// Set object index
+pub const BUILTIN_SET: u32 = 16;
 
 /// Native function signature
 ///
@@ -385,6 +389,10 @@ pub struct Interpreter {
     error_objects: Vec<ErrorObject>,
     /// RegExp objects created during execution
     regex_objects: Vec<RegExpObject>,
+    /// Map objects created during execution
+    map_objects: Vec<MapObject>,
+    /// Set objects created during execution
+    set_objects: Vec<SetObject>,
     /// Current compile-time string constants (set during bytecode execution)
     /// Used by native functions to look up compile-time strings
     current_string_constants: Option<*const Vec<String>>,
@@ -428,6 +436,117 @@ impl std::fmt::Debug for RegExpObject {
     }
 }
 
+/// Map object storage - stores key-value pairs with insertion order
+#[derive(Debug, Clone)]
+pub struct MapObject {
+    /// Entries stored as (key, value) pairs in insertion order
+    /// We use a simple Vec to maintain insertion order
+    pub entries: Vec<(Value, Value)>,
+}
+
+impl MapObject {
+    pub fn new() -> Self {
+        MapObject { entries: Vec::new() }
+    }
+
+    /// Get a value by key (using strict equality comparison)
+    pub fn get(&self, key: Value) -> Option<Value> {
+        for (k, v) in &self.entries {
+            if Self::values_equal(*k, key) {
+                return Some(*v);
+            }
+        }
+        None
+    }
+
+    /// Set a key-value pair
+    pub fn set(&mut self, key: Value, value: Value) {
+        // Check if key exists
+        for (k, v) in &mut self.entries {
+            if Self::values_equal(*k, key) {
+                *v = value;
+                return;
+            }
+        }
+        // Key doesn't exist, add new entry
+        self.entries.push((key, value));
+    }
+
+    /// Check if key exists
+    pub fn has(&self, key: Value) -> bool {
+        self.entries.iter().any(|(k, _)| Self::values_equal(*k, key))
+    }
+
+    /// Delete a key
+    pub fn delete(&mut self, key: Value) -> bool {
+        let initial_len = self.entries.len();
+        self.entries.retain(|(k, _)| !Self::values_equal(*k, key));
+        self.entries.len() < initial_len
+    }
+
+    /// Get size
+    pub fn size(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Clear all entries
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Simple value equality check
+    fn values_equal(a: Value, b: Value) -> bool {
+        a.0 == b.0 || (a.to_i32().is_some() && a.to_i32() == b.to_i32())
+    }
+}
+
+/// Set object storage - stores unique values in insertion order
+#[derive(Debug, Clone)]
+pub struct SetObject {
+    /// Values stored in insertion order
+    pub values: Vec<Value>,
+}
+
+impl SetObject {
+    pub fn new() -> Self {
+        SetObject { values: Vec::new() }
+    }
+
+    /// Add a value (no-op if already exists)
+    pub fn add(&mut self, value: Value) {
+        if !self.has(value) {
+            self.values.push(value);
+        }
+    }
+
+    /// Check if value exists
+    pub fn has(&self, value: Value) -> bool {
+        self.values.iter().any(|v| Self::values_equal(*v, value))
+    }
+
+    /// Delete a value
+    pub fn delete(&mut self, value: Value) -> bool {
+        let initial_len = self.values.len();
+        self.values.retain(|v| !Self::values_equal(*v, value));
+        self.values.len() < initial_len
+    }
+
+    /// Get size
+    pub fn size(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Clear all values
+    pub fn clear(&mut self) {
+        self.values.clear();
+    }
+
+    /// Simple value equality check
+    fn values_equal(a: Value, b: Value) -> bool {
+        a.0 == b.0 || (a.to_i32().is_some() && a.to_i32() == b.to_i32())
+    }
+}
+
 impl Interpreter {
     /// Default stack capacity
     const DEFAULT_STACK_SIZE: usize = 1024;
@@ -450,6 +569,8 @@ impl Interpreter {
             native_functions: Vec::new(),
             error_objects: Vec::new(),
             regex_objects: Vec::new(),
+            map_objects: Vec::new(),
+            set_objects: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
         };
@@ -473,6 +594,8 @@ impl Interpreter {
             native_functions: Vec::new(),
             error_objects: Vec::new(),
             regex_objects: Vec::new(),
+            map_objects: Vec::new(),
+            set_objects: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
         };
@@ -1737,6 +1860,55 @@ impl Interpreter {
                             }
                             continue;
                         }
+
+                        // Check if this is the Map constructor
+                        if builtin_idx == BUILTIN_MAP {
+                            let map_idx = self.map_objects.len() as u32;
+                            let mut map = MapObject::new();
+
+                            // If an iterable is provided, populate the map
+                            if let Some(iterable) = args.first() {
+                                if let Some(arr_idx) = iterable.to_array_idx() {
+                                    // Array of [key, value] pairs
+                                    if let Some(arr) = self.get_array(arr_idx).cloned() {
+                                        for entry in arr {
+                                            if let Some(entry_arr_idx) = entry.to_array_idx() {
+                                                if let Some(entry_arr) = self.get_array(entry_arr_idx).cloned() {
+                                                    if entry_arr.len() >= 2 {
+                                                        map.set(entry_arr[0], entry_arr[1]);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            self.map_objects.push(map);
+                            self.stack.push(Value::map_object(map_idx));
+                            continue;
+                        }
+
+                        // Check if this is the Set constructor
+                        if builtin_idx == BUILTIN_SET {
+                            let set_idx = self.set_objects.len() as u32;
+                            let mut set = SetObject::new();
+
+                            // If an iterable is provided, populate the set
+                            if let Some(iterable) = args.first() {
+                                if let Some(arr_idx) = iterable.to_array_idx() {
+                                    if let Some(arr) = self.get_array(arr_idx).cloned() {
+                                        for value in arr {
+                                            set.add(value);
+                                        }
+                                    }
+                                }
+                            }
+
+                            self.set_objects.push(set);
+                            self.stack.push(Value::set_object(set_idx));
+                            continue;
+                        }
                     }
 
                     // Create a new object for 'this', storing the constructor reference for instanceof
@@ -2022,6 +2194,8 @@ impl Interpreter {
                         "SyntaxError" => Some(Value::builtin_object(BUILTIN_SYNTAX_ERROR)),
                         "RangeError" => Some(Value::builtin_object(BUILTIN_RANGE_ERROR)),
                         "RegExp" => Some(Value::builtin_object(BUILTIN_REGEXP)),
+                        "Map" => Some(Value::builtin_object(BUILTIN_MAP)),
+                        "Set" => Some(Value::builtin_object(BUILTIN_SET)),
                         _ => self.get_native_func(name),
                     };
 
@@ -2276,6 +2450,14 @@ impl Interpreter {
                         // RegExp object property access
                         let val = self.get_regexp_property(regex_idx, prop_name);
                         self.stack.push(val);
+                    } else if let Some(map_idx) = obj.to_map_object_idx() {
+                        // Map object property access
+                        let val = self.get_map_property(map_idx, prop_name);
+                        self.stack.push(val);
+                    } else if let Some(set_idx) = obj.to_set_object_idx() {
+                        // Set object property access
+                        let val = self.get_set_property(set_idx, prop_name);
+                        self.stack.push(val);
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         // Get property from regular object
                         let val = self.object_get_property(obj_idx, prop_name);
@@ -2314,6 +2496,10 @@ impl Interpreter {
                         self.get_array_property(obj, prop_name)
                     } else if let Some(regex_idx) = obj.to_regexp_object_idx() {
                         self.get_regexp_property(regex_idx, prop_name)
+                    } else if let Some(map_idx) = obj.to_map_object_idx() {
+                        self.get_map_property(map_idx, prop_name)
+                    } else if let Some(set_idx) = obj.to_set_object_idx() {
+                        self.get_set_property(set_idx, prop_name)
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         self.object_get_property(obj_idx, prop_name)
                     } else if obj.is_string() {
@@ -3121,6 +3307,45 @@ impl Interpreter {
         }
     }
 
+    /// Get a property from a Map object
+    fn get_map_property(&self, map_idx: u32, prop_name: &str) -> Value {
+        match prop_name {
+            "get" => self.get_native_func("Map.prototype.get").unwrap_or(Value::undefined()),
+            "set" => self.get_native_func("Map.prototype.set").unwrap_or(Value::undefined()),
+            "has" => self.get_native_func("Map.prototype.has").unwrap_or(Value::undefined()),
+            "delete" => self.get_native_func("Map.prototype.delete").unwrap_or(Value::undefined()),
+            "clear" => self.get_native_func("Map.prototype.clear").unwrap_or(Value::undefined()),
+            "forEach" => self.get_native_func("Map.prototype.forEach").unwrap_or(Value::undefined()),
+            "size" => {
+                // size is a getter
+                let size = self.map_objects.get(map_idx as usize)
+                    .map(|m| m.size())
+                    .unwrap_or(0);
+                Value::int(size as i32)
+            }
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Get a property from a Set object
+    fn get_set_property(&self, set_idx: u32, prop_name: &str) -> Value {
+        match prop_name {
+            "add" => self.get_native_func("Set.prototype.add").unwrap_or(Value::undefined()),
+            "has" => self.get_native_func("Set.prototype.has").unwrap_or(Value::undefined()),
+            "delete" => self.get_native_func("Set.prototype.delete").unwrap_or(Value::undefined()),
+            "clear" => self.get_native_func("Set.prototype.clear").unwrap_or(Value::undefined()),
+            "forEach" => self.get_native_func("Set.prototype.forEach").unwrap_or(Value::undefined()),
+            "size" => {
+                // size is a getter
+                let size = self.set_objects.get(set_idx as usize)
+                    .map(|s| s.size())
+                    .unwrap_or(0);
+                Value::int(size as i32)
+            }
+            _ => Value::undefined(),
+        }
+    }
+
     /// Get a property from a builtin object (Math, JSON, etc.)
     fn get_builtin_property(&self, builtin_idx: u32, prop_name: &str) -> Value {
         match builtin_idx {
@@ -3411,6 +3636,23 @@ impl Interpreter {
         // RegExp methods
         self.register_native("RegExp.prototype.test", native_regexp_test, 1);
         self.register_native("RegExp.prototype.exec", native_regexp_exec, 1);
+
+        // Map methods
+        self.register_native("Map.prototype.get", native_map_get, 1);
+        self.register_native("Map.prototype.set", native_map_set, 2);
+        self.register_native("Map.prototype.has", native_map_has, 1);
+        self.register_native("Map.prototype.delete", native_map_delete, 1);
+        self.register_native("Map.prototype.clear", native_map_clear, 0);
+        self.register_native("Map.prototype.size", native_map_size, 0);
+        self.register_native("Map.prototype.forEach", native_map_foreach, 1);
+
+        // Set methods
+        self.register_native("Set.prototype.add", native_set_add, 1);
+        self.register_native("Set.prototype.has", native_set_has, 1);
+        self.register_native("Set.prototype.delete", native_set_delete, 1);
+        self.register_native("Set.prototype.clear", native_set_clear, 0);
+        self.register_native("Set.prototype.size", native_set_size, 0);
+        self.register_native("Set.prototype.forEach", native_set_foreach, 1);
 
         // Object static methods
         self.register_native("Object.keys", native_object_keys, 1);
@@ -6128,6 +6370,201 @@ fn native_array_of(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Re
 fn native_array_is_array(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let val = args.first().copied().unwrap_or(Value::undefined());
     Ok(Value::bool(val.is_array()))
+}
+
+// ===========================================
+// Map.prototype Methods
+// ===========================================
+
+/// Map.prototype.get - get value by key
+fn native_map_get(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "get called on non-Map".to_string())?;
+
+    let key = args.first().copied().unwrap_or(Value::undefined());
+
+    let result = interp.map_objects.get(map_idx as usize)
+        .and_then(|m| m.get(key))
+        .unwrap_or(Value::undefined());
+
+    Ok(result)
+}
+
+/// Map.prototype.set - set key-value pair
+fn native_map_set(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "set called on non-Map".to_string())?;
+
+    let key = args.first().copied().unwrap_or(Value::undefined());
+    let value = args.get(1).copied().unwrap_or(Value::undefined());
+
+    if let Some(map) = interp.map_objects.get_mut(map_idx as usize) {
+        map.set(key, value);
+    }
+
+    Ok(this) // Return the Map for chaining
+}
+
+/// Map.prototype.has - check if key exists
+fn native_map_has(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "has called on non-Map".to_string())?;
+
+    let key = args.first().copied().unwrap_or(Value::undefined());
+
+    let has = interp.map_objects.get(map_idx as usize)
+        .map(|m| m.has(key))
+        .unwrap_or(false);
+
+    Ok(Value::bool(has))
+}
+
+/// Map.prototype.delete - delete key
+fn native_map_delete(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "delete called on non-Map".to_string())?;
+
+    let key = args.first().copied().unwrap_or(Value::undefined());
+
+    let deleted = interp.map_objects.get_mut(map_idx as usize)
+        .map(|m| m.delete(key))
+        .unwrap_or(false);
+
+    Ok(Value::bool(deleted))
+}
+
+/// Map.prototype.clear - remove all entries
+fn native_map_clear(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "clear called on non-Map".to_string())?;
+
+    if let Some(map) = interp.map_objects.get_mut(map_idx as usize) {
+        map.clear();
+    }
+
+    Ok(Value::undefined())
+}
+
+/// Map.prototype.size - get number of entries (as a getter)
+fn native_map_size(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "size called on non-Map".to_string())?;
+
+    let size = interp.map_objects.get(map_idx as usize)
+        .map(|m| m.size())
+        .unwrap_or(0);
+
+    Ok(Value::int(size as i32))
+}
+
+/// Map.prototype.forEach - call callback for each entry
+fn native_map_foreach(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let map_idx = this.to_map_object_idx()
+        .ok_or_else(|| "forEach called on non-Map".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "forEach requires a callback function".to_string())?;
+
+    let entries: Vec<(Value, Value)> = interp.map_objects.get(map_idx as usize)
+        .map(|m| m.entries.clone())
+        .unwrap_or_default();
+
+    for (key, value) in entries {
+        interp.call_value(callback, this, &[value, key, this])
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(Value::undefined())
+}
+
+// ===========================================
+// Set.prototype Methods
+// ===========================================
+
+/// Set.prototype.add - add value to set
+fn native_set_add(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let set_idx = this.to_set_object_idx()
+        .ok_or_else(|| "add called on non-Set".to_string())?;
+
+    let value = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(set) = interp.set_objects.get_mut(set_idx as usize) {
+        set.add(value);
+    }
+
+    Ok(this) // Return the Set for chaining
+}
+
+/// Set.prototype.has - check if value exists
+fn native_set_has(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let set_idx = this.to_set_object_idx()
+        .ok_or_else(|| "has called on non-Set".to_string())?;
+
+    let value = args.first().copied().unwrap_or(Value::undefined());
+
+    let has = interp.set_objects.get(set_idx as usize)
+        .map(|s| s.has(value))
+        .unwrap_or(false);
+
+    Ok(Value::bool(has))
+}
+
+/// Set.prototype.delete - remove value from set
+fn native_set_delete(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let set_idx = this.to_set_object_idx()
+        .ok_or_else(|| "delete called on non-Set".to_string())?;
+
+    let value = args.first().copied().unwrap_or(Value::undefined());
+
+    let deleted = interp.set_objects.get_mut(set_idx as usize)
+        .map(|s| s.delete(value))
+        .unwrap_or(false);
+
+    Ok(Value::bool(deleted))
+}
+
+/// Set.prototype.clear - remove all values
+fn native_set_clear(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let set_idx = this.to_set_object_idx()
+        .ok_or_else(|| "clear called on non-Set".to_string())?;
+
+    if let Some(set) = interp.set_objects.get_mut(set_idx as usize) {
+        set.clear();
+    }
+
+    Ok(Value::undefined())
+}
+
+/// Set.prototype.size - get number of values (as a getter)
+fn native_set_size(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let set_idx = this.to_set_object_idx()
+        .ok_or_else(|| "size called on non-Set".to_string())?;
+
+    let size = interp.set_objects.get(set_idx as usize)
+        .map(|s| s.size())
+        .unwrap_or(0);
+
+    Ok(Value::int(size as i32))
+}
+
+/// Set.prototype.forEach - call callback for each value
+fn native_set_foreach(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let set_idx = this.to_set_object_idx()
+        .ok_or_else(|| "forEach called on non-Set".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "forEach requires a callback function".to_string())?;
+
+    let values: Vec<Value> = interp.set_objects.get(set_idx as usize)
+        .map(|s| s.values.clone())
+        .unwrap_or_default();
+
+    for value in values {
+        interp.call_value(callback, this, &[value, value, this])
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(Value::undefined())
 }
 
 // ===========================================

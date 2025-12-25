@@ -3704,4 +3704,175 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(65)); // 'A' = 65
     }
+
+    // ===================================
+    // Map tests
+    // ===================================
+
+    #[test]
+    fn test_map_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var m = new Map();
+            m.set(1, 'one');
+            m.set(2, 'two');
+            return m.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_map_get() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var m = new Map();
+            m.set(42, 100);
+            return m.get(42);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(100));
+    }
+
+    #[test]
+    fn test_map_has() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var m = new Map();
+            m.set(1, 'a');
+            var has1 = m.has(1);
+            var has2 = m.has(2);
+            return has1 && !has2 ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_map_overwrite() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test that setting same key overwrites value
+        let result = ctx.eval("
+            var m = new Map();
+            m.set(1, 10);
+            m.set(1, 20);
+            return m.get(1);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(20));
+    }
+
+    #[test]
+    fn test_map_clear() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var m = new Map();
+            m.set(1, 'a');
+            m.set(2, 'b');
+            m.clear();
+            return m.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_map_chaining() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var m = new Map();
+            m.set(1, 'a').set(2, 'b').set(3, 'c');
+            return m.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    // ===================================
+    // Set tests
+    // ===================================
+
+    #[test]
+    fn test_set_basic() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = new Set();
+            s.add(1);
+            s.add(2);
+            s.add(3);
+            return s.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_set_duplicates() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = new Set();
+            s.add(1);
+            s.add(1);
+            s.add(1);
+            return s.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1)); // Duplicates not added
+    }
+
+    #[test]
+    fn test_set_has() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = new Set();
+            s.add(42);
+            var has42 = s.has(42);
+            var has99 = s.has(99);
+            return has42 && !has99 ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_set_multiple_types() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test that Set can hold different values
+        let result = ctx.eval("
+            var s = new Set();
+            s.add(1);
+            s.add(2);
+            s.add(3);
+            return s.has(2) ? s.size : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_set_clear() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = new Set();
+            s.add(1);
+            s.add(2);
+            s.add(3);
+            s.clear();
+            return s.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_set_chaining() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = new Set();
+            s.add(1).add(2).add(3);
+            return s.size;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
 }

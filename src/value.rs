@@ -79,6 +79,14 @@ pub const ERROR_OBJECT_MARKER: i32 = 1 << 20;
 /// When bit 19 is set, it's a RegExp object index
 pub const REGEXP_OBJECT_MARKER: i32 = 1 << 19;
 
+/// Marker bit for Map objects
+/// When bit 18 is set, it's a Map object index
+pub const MAP_OBJECT_MARKER: i32 = 1 << 18;
+
+/// Marker bit for Set objects
+/// When bit 17 is set, it's a Set object index
+pub const SET_OBJECT_MARKER: i32 = 1 << 17;
+
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -620,6 +628,63 @@ impl Value {
     pub const fn to_regexp_object_idx(self) -> Option<u32> {
         if self.is_regexp_object() {
             Some((self.0.get_special_value() & !REGEXP_OBJECT_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Create a Map object Value from an index
+    #[inline]
+    pub const fn map_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | MAP_OBJECT_MARKER,
+        ))
+    }
+
+    /// Check if this is a Map object
+    #[inline]
+    pub const fn is_map_object(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & MAP_OBJECT_MARKER) != 0
+            && (self.0.get_special_value() & ERROR_OBJECT_MARKER) == 0
+            && (self.0.get_special_value() & REGEXP_OBJECT_MARKER) == 0
+    }
+
+    /// Get Map object index, returns None if not a Map object
+    #[inline]
+    pub const fn to_map_object_idx(self) -> Option<u32> {
+        if self.is_map_object() {
+            Some((self.0.get_special_value() & !MAP_OBJECT_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Create a Set object Value from an index
+    #[inline]
+    pub const fn set_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | SET_OBJECT_MARKER,
+        ))
+    }
+
+    /// Check if this is a Set object
+    #[inline]
+    pub const fn is_set_object(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & SET_OBJECT_MARKER) != 0
+            && (self.0.get_special_value() & ERROR_OBJECT_MARKER) == 0
+            && (self.0.get_special_value() & REGEXP_OBJECT_MARKER) == 0
+            && (self.0.get_special_value() & MAP_OBJECT_MARKER) == 0
+    }
+
+    /// Get Set object index, returns None if not a Set object
+    #[inline]
+    pub const fn to_set_object_idx(self) -> Option<u32> {
+        if self.is_set_object() {
+            Some((self.0.get_special_value() & !SET_OBJECT_MARKER) as u32)
         } else {
             None
         }
