@@ -3438,8 +3438,27 @@ impl Interpreter {
                     "exp" => self.get_native_func("Math.exp").unwrap_or(Value::undefined()),
                     "clz32" => self.get_native_func("Math.clz32").unwrap_or(Value::undefined()),
                     "imul" => self.get_native_func("Math.imul").unwrap_or(Value::undefined()),
-                    "PI" => Value::int(3), // TODO: proper float value 3.14159...
-                    "E" => Value::int(2),  // TODO: proper float value 2.71828...
+                    "sin" => self.get_native_func("Math.sin").unwrap_or(Value::undefined()),
+                    "cos" => self.get_native_func("Math.cos").unwrap_or(Value::undefined()),
+                    "tan" => self.get_native_func("Math.tan").unwrap_or(Value::undefined()),
+                    "asin" => self.get_native_func("Math.asin").unwrap_or(Value::undefined()),
+                    "acos" => self.get_native_func("Math.acos").unwrap_or(Value::undefined()),
+                    "atan" => self.get_native_func("Math.atan").unwrap_or(Value::undefined()),
+                    "atan2" => self.get_native_func("Math.atan2").unwrap_or(Value::undefined()),
+                    "hypot" => self.get_native_func("Math.hypot").unwrap_or(Value::undefined()),
+                    "cbrt" => self.get_native_func("Math.cbrt").unwrap_or(Value::undefined()),
+                    "expm1" => self.get_native_func("Math.expm1").unwrap_or(Value::undefined()),
+                    "log1p" => self.get_native_func("Math.log1p").unwrap_or(Value::undefined()),
+                    "fround" => self.get_native_func("Math.fround").unwrap_or(Value::undefined()),
+                    // Math constants (scaled by 1000 for precision)
+                    "PI" => Value::int(3142),  // 3.14159... * 1000
+                    "E" => Value::int(2718),   // 2.71828... * 1000
+                    "LN2" => Value::int(693),  // 0.693... * 1000
+                    "LN10" => Value::int(2303), // 2.302... * 1000
+                    "LOG2E" => Value::int(1443), // 1.442... * 1000
+                    "LOG10E" => Value::int(434), // 0.434... * 1000
+                    "SQRT2" => Value::int(1414), // 1.414... * 1000
+                    "SQRT1_2" => Value::int(707), // 0.707... * 1000
                     _ => Value::undefined(),
                 }
             }
@@ -3476,6 +3495,10 @@ impl Interpreter {
                     "log" => self.get_native_func("console.log").unwrap_or(Value::undefined()),
                     "error" => self.get_native_func("console.error").unwrap_or(Value::undefined()),
                     "warn" => self.get_native_func("console.warn").unwrap_or(Value::undefined()),
+                    "info" => self.get_native_func("console.info").unwrap_or(Value::undefined()),
+                    "debug" => self.get_native_func("console.debug").unwrap_or(Value::undefined()),
+                    "trace" => self.get_native_func("console.trace").unwrap_or(Value::undefined()),
+                    "assert" => self.get_native_func("console.assert").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3700,6 +3723,18 @@ impl Interpreter {
         self.register_native("Math.exp", native_math_exp, 1);
         self.register_native("Math.clz32", native_math_clz32, 1);
         self.register_native("Math.imul", native_math_imul, 2);
+        self.register_native("Math.sin", native_math_sin, 1);
+        self.register_native("Math.cos", native_math_cos, 1);
+        self.register_native("Math.tan", native_math_tan, 1);
+        self.register_native("Math.asin", native_math_asin, 1);
+        self.register_native("Math.acos", native_math_acos, 1);
+        self.register_native("Math.atan", native_math_atan, 1);
+        self.register_native("Math.atan2", native_math_atan2, 2);
+        self.register_native("Math.hypot", native_math_hypot, 0);
+        self.register_native("Math.cbrt", native_math_cbrt, 1);
+        self.register_native("Math.expm1", native_math_expm1, 1);
+        self.register_native("Math.log1p", native_math_log1p, 1);
+        self.register_native("Math.fround", native_math_fround, 1);
 
         // Number methods
         self.register_native("Number.prototype.toFixed", native_number_to_fixed, 1);
@@ -3743,6 +3778,10 @@ impl Interpreter {
         self.register_native("console.log", native_console_log, 0);
         self.register_native("console.error", native_console_error, 0);
         self.register_native("console.warn", native_console_warn, 0);
+        self.register_native("console.info", native_console_info, 0);
+        self.register_native("console.debug", native_console_debug, 0);
+        self.register_native("console.trace", native_console_trace, 0);
+        self.register_native("console.assert", native_console_assert, 1);
 
         // JSON methods
         self.register_native("JSON.stringify", native_json_stringify, 1);
@@ -5261,6 +5300,99 @@ fn native_math_imul(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> 
     Ok(Value::int(a.wrapping_mul(b)))
 }
 
+/// Math.sin - sine function (returns scaled integer * 1000)
+fn native_math_sin(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    // Input is in degrees, scale result to integer range (-1000 to 1000)
+    let result = (x.to_radians().sin() * 1000.0).round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.cos - cosine function (returns scaled integer * 1000)
+fn native_math_cos(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    let result = (x.to_radians().cos() * 1000.0).round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.tan - tangent function (returns scaled integer * 1000)
+fn native_math_tan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    let tan_val = x.to_radians().tan();
+    // Clamp to prevent overflow
+    let result = (tan_val * 1000.0).clamp(i32::MIN as f64, i32::MAX as f64).round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.asin - arc sine (input scaled by 1000, returns degrees)
+fn native_math_asin(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64 / 1000.0;
+    let x = x.clamp(-1.0, 1.0);
+    let result = x.asin().to_degrees().round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.acos - arc cosine (input scaled by 1000, returns degrees)
+fn native_math_acos(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64 / 1000.0;
+    let x = x.clamp(-1.0, 1.0);
+    let result = x.acos().to_degrees().round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.atan - arc tangent (input scaled by 1000, returns degrees)
+fn native_math_atan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64 / 1000.0;
+    let result = x.atan().to_degrees().round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.atan2 - arc tangent of y/x (returns degrees)
+fn native_math_atan2(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let y = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    let x = args.get(1).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    let result = y.atan2(x).to_degrees().round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.hypot - hypotenuse (sqrt of sum of squares)
+fn native_math_hypot(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let mut sum = 0.0f64;
+    for arg in args {
+        if let Some(n) = arg.to_i32() {
+            sum += (n as f64).powi(2);
+        }
+    }
+    Ok(Value::int(sum.sqrt().round() as i32))
+}
+
+/// Math.cbrt - cube root
+fn native_math_cbrt(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    Ok(Value::int(x.cbrt().round() as i32))
+}
+
+/// Math.expm1 - e^x - 1
+fn native_math_expm1(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    let result = x.exp_m1().clamp(i32::MIN as f64, i32::MAX as f64).round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.log1p - ln(1 + x)
+fn native_math_log1p(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as f64;
+    let result = x.ln_1p().round() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.fround - round to nearest 32-bit float (returns integer approximation)
+fn native_math_fround(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // For integer-only implementation, just return the value
+    Ok(Value::int(x))
+}
+
 // =============================================================================
 // Number.prototype methods
 // =============================================================================
@@ -6244,6 +6376,50 @@ fn native_console_error(interp: &mut Interpreter, _this: Value, args: &[Value]) 
 fn native_console_warn(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let output = format_console_args(interp, args);
     eprintln!("{}", output);
+    Ok(Value::undefined())
+}
+
+/// console.info - print values to stdout (alias for log)
+fn native_console_info(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let output = format_console_args(interp, args);
+    println!("{}", output);
+    Ok(Value::undefined())
+}
+
+/// console.debug - print values to stdout (alias for log)
+fn native_console_debug(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let output = format_console_args(interp, args);
+    println!("{}", output);
+    Ok(Value::undefined())
+}
+
+/// console.trace - print stack trace
+fn native_console_trace(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let output = format_console_args(interp, args);
+    if !output.is_empty() {
+        println!("Trace: {}", output);
+    } else {
+        println!("Trace");
+    }
+    // Print call stack (simplified)
+    for (i, frame) in interp.call_stack.iter().rev().enumerate() {
+        println!("  at frame {}", i);
+        let _ = frame; // We don't have function names stored
+    }
+    Ok(Value::undefined())
+}
+
+/// console.assert - conditionally print error message
+fn native_console_assert(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let condition = args.first().and_then(|v| v.to_bool()).unwrap_or(false);
+    if !condition {
+        let message = if args.len() > 1 {
+            format_console_args(interp, &args[1..])
+        } else {
+            "Assertion failed".to_string()
+        };
+        eprintln!("Assertion failed: {}", message);
+    }
     Ok(Value::undefined())
 }
 

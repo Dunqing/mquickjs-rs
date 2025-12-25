@@ -4531,4 +4531,118 @@ mod tests {
         // 1 + 20 = 21
         assert_eq!(result.to_i32(), Some(21));
     }
+
+    // ================================================
+    // Stage 6.14 Tests - Math trig functions, constants, console
+    // ================================================
+
+    #[test]
+    fn test_math_sin_90() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.sin(90);
+        ").unwrap();
+        // sin(90 degrees) = 1.0 * 1000 = 1000
+        assert_eq!(result.to_i32(), Some(1000));
+    }
+
+    #[test]
+    fn test_math_cos_0() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.cos(0);
+        ").unwrap();
+        // cos(0 degrees) = 1.0 * 1000 = 1000
+        assert_eq!(result.to_i32(), Some(1000));
+    }
+
+    #[test]
+    fn test_math_tan_45() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.tan(45);
+        ").unwrap();
+        // tan(45 degrees) = 1.0 * 1000 = 1000
+        assert_eq!(result.to_i32(), Some(1000));
+    }
+
+    #[test]
+    fn test_math_hypot() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.hypot(3, 4);
+        ").unwrap();
+        // sqrt(9 + 16) = sqrt(25) = 5
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_math_cbrt() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.cbrt(27);
+        ").unwrap();
+        // cbrt(27) = 3
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_math_pi() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.PI;
+        ").unwrap();
+        // PI * 1000 = 3142
+        assert_eq!(result.to_i32(), Some(3142));
+    }
+
+    #[test]
+    fn test_math_e() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.E;
+        ").unwrap();
+        // E * 1000 = 2718
+        assert_eq!(result.to_i32(), Some(2718));
+    }
+
+    #[test]
+    fn test_math_sqrt2() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.SQRT2;
+        ").unwrap();
+        // sqrt(2) * 1000 = 1414
+        assert_eq!(result.to_i32(), Some(1414));
+    }
+
+    #[test]
+    fn test_math_atan2() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.atan2(1, 1);
+        ").unwrap();
+        // atan2(1,1) = 45 degrees
+        assert_eq!(result.to_i32(), Some(45));
+    }
+
+    #[test]
+    fn test_math_fround() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Math.fround(42);
+        ").unwrap();
+        // fround(42) = 42 (for integer impl)
+        assert_eq!(result.to_i32(), Some(42));
+    }
 }

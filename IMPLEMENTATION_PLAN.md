@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 411 passing
+**Test Count**: 421 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -542,6 +542,27 @@
   - Array.prototype.keys() - returns array of indices
   - Array.prototype.values() - returns array of values
   - Array.prototype.entries() - returns array of [index, value] pairs
+- 10 new tests
+
+**Stage 6.14 Math Trigonometry, Constants, Console Methods**:
+- Math trigonometric functions (input in degrees, output scaled by 1000):
+  - Math.sin(x), Math.cos(x), Math.tan(x) - basic trig functions
+  - Math.asin(x), Math.acos(x), Math.atan(x) - inverse trig functions (input scaled by 1000)
+  - Math.atan2(y, x) - arc tangent of y/x (returns degrees)
+- Math additional functions:
+  - Math.hypot(...values) - hypotenuse (sqrt of sum of squares)
+  - Math.cbrt(x) - cube root
+  - Math.expm1(x) - e^x - 1
+  - Math.log1p(x) - ln(1 + x)
+  - Math.fround(x) - round to nearest 32-bit float
+- Math constants (scaled by 1000 for precision):
+  - Math.PI (3142), Math.E (2718), Math.LN2 (693), Math.LN10 (2303)
+  - Math.LOG2E (1443), Math.LOG10E (434), Math.SQRT2 (1414), Math.SQRT1_2 (707)
+- Additional console methods:
+  - console.info(...args) - alias for log
+  - console.debug(...args) - alias for log
+  - console.trace(...args) - print stack trace
+  - console.assert(condition, ...args) - conditional error message
 - 10 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise
