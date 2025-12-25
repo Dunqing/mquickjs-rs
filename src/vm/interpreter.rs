@@ -3020,6 +3020,10 @@ impl Interpreter {
             "splice" => self.get_native_func("Array.prototype.splice").unwrap_or(Value::undefined()),
             "lastIndexOf" => self.get_native_func("Array.prototype.lastIndexOf").unwrap_or(Value::undefined()),
             "flatMap" => self.get_native_func("Array.prototype.flatMap").unwrap_or(Value::undefined()),
+            "copyWithin" => self.get_native_func("Array.prototype.copyWithin").unwrap_or(Value::undefined()),
+            "at" => self.get_native_func("Array.prototype.at").unwrap_or(Value::undefined()),
+            "findLast" => self.get_native_func("Array.prototype.findLast").unwrap_or(Value::undefined()),
+            "findLastIndex" => self.get_native_func("Array.prototype.findLastIndex").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3058,6 +3062,8 @@ impl Interpreter {
             "trimStart" => self.get_native_func("String.prototype.trimStart").unwrap_or(Value::undefined()),
             "trimEnd" => self.get_native_func("String.prototype.trimEnd").unwrap_or(Value::undefined()),
             "replaceAll" => self.get_native_func("String.prototype.replaceAll").unwrap_or(Value::undefined()),
+            "at" => self.get_native_func("String.prototype.at").unwrap_or(Value::undefined()),
+            "charCodeAt" => self.get_native_func("String.prototype.charCodeAt").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3197,6 +3203,13 @@ impl Interpreter {
                     _ => Value::undefined(),
                 }
             }
+            BUILTIN_STRING => {
+                // String static methods
+                match prop_name {
+                    "fromCharCode" => self.get_native_func("String.fromCharCode").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             _ => Value::undefined(),
         }
     }
@@ -3332,6 +3345,10 @@ impl Interpreter {
         self.register_native("Array.prototype.splice", native_array_splice, 2);
         self.register_native("Array.prototype.lastIndexOf", native_array_last_index_of, 1);
         self.register_native("Array.prototype.flatMap", native_array_flat_map, 1);
+        self.register_native("Array.prototype.copyWithin", native_array_copy_within, 2);
+        self.register_native("Array.prototype.at", native_array_at, 1);
+        self.register_native("Array.prototype.findLast", native_array_find_last, 1);
+        self.register_native("Array.prototype.findLastIndex", native_array_find_last_index, 1);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
@@ -3370,6 +3387,9 @@ impl Interpreter {
         self.register_native("String.prototype.trimStart", native_string_trim_start, 0);
         self.register_native("String.prototype.trimEnd", native_string_trim_end, 0);
         self.register_native("String.prototype.replaceAll", native_string_replace_all, 2);
+        self.register_native("String.prototype.at", native_string_at, 1);
+        self.register_native("String.prototype.charCodeAt", native_string_char_code_at, 1);
+        self.register_native("String.fromCharCode", native_string_from_char_code, 0);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -4117,6 +4137,137 @@ fn native_array_flat_map(interp: &mut Interpreter, this: Value, args: &[Value]) 
     let result_idx = interp.arrays.len() as u32;
     interp.arrays.push(result);
     Ok(Value::array_idx(result_idx))
+}
+
+/// Array.prototype.copyWithin - copy array elements within the array
+fn native_array_copy_within(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "copyWithin called on non-array".to_string())?;
+
+    let arr_len = interp.arrays.get(arr_idx as usize)
+        .map(|a| a.len())
+        .unwrap_or(0) as i32;
+
+    if arr_len == 0 {
+        return Ok(this);
+    }
+
+    // Target index (where to copy to)
+    let target = args.get(0)
+        .and_then(|v| v.to_i32())
+        .map(|t| if t < 0 { (arr_len + t).max(0) } else { t.min(arr_len) })
+        .unwrap_or(0) as usize;
+
+    // Start index (where to copy from)
+    let start = args.get(1)
+        .and_then(|v| v.to_i32())
+        .map(|s| if s < 0 { (arr_len + s).max(0) } else { s.min(arr_len) })
+        .unwrap_or(0) as usize;
+
+    // End index (where to stop copying from)
+    let end = args.get(2)
+        .and_then(|v| v.to_i32())
+        .map(|e| if e < 0 { (arr_len + e).max(0) } else { e.min(arr_len) })
+        .unwrap_or(arr_len) as usize;
+
+    // Calculate actual copy count
+    let copy_count = (end.saturating_sub(start)).min(arr_len as usize - target);
+
+    if copy_count == 0 {
+        return Ok(this);
+    }
+
+    // Copy elements (handle overlapping correctly)
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        // Create a temporary copy of the source elements
+        let source: Vec<Value> = arr[start..start + copy_count].to_vec();
+
+        // Copy to target position
+        for (i, val) in source.into_iter().enumerate() {
+            if target + i < arr.len() {
+                arr[target + i] = val;
+            }
+        }
+    }
+
+    Ok(this)
+}
+
+/// Array.prototype.at - get element at index (supports negative indices)
+fn native_array_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "at called on non-array".to_string())?;
+
+    let arr = interp.arrays.get(arr_idx as usize)
+        .map(|a| a.clone())
+        .unwrap_or_default();
+
+    let len = arr.len() as i32;
+
+    let index = args.get(0)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0);
+
+    // Normalize negative index
+    let actual_index = if index < 0 {
+        (len + index) as usize
+    } else {
+        index as usize
+    };
+
+    Ok(arr.get(actual_index).copied().unwrap_or(Value::undefined()))
+}
+
+/// Array.prototype.findLast - find last matching element
+fn native_array_find_last(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "findLast called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "findLast requires a callback function".to_string())?;
+
+    let elements: Vec<Value> = interp.get_array(arr_idx)
+        .map(|arr| arr.clone())
+        .unwrap_or_default();
+
+    // Iterate in reverse
+    for i in (0..elements.len()).rev() {
+        let elem = elements[i];
+        let result = interp.call_value(callback, this, &[elem, Value::int(i as i32), this])
+            .map_err(|e| e.to_string())?;
+
+        if Interpreter::value_to_bool(result) {
+            return Ok(elem);
+        }
+    }
+
+    Ok(Value::undefined())
+}
+
+/// Array.prototype.findLastIndex - find index of last matching element
+fn native_array_find_last_index(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "findLastIndex called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "findLastIndex requires a callback function".to_string())?;
+
+    let elements: Vec<Value> = interp.get_array(arr_idx)
+        .map(|arr| arr.clone())
+        .unwrap_or_default();
+
+    // Iterate in reverse
+    for i in (0..elements.len()).rev() {
+        let elem = elements[i];
+        let result = interp.call_value(callback, this, &[elem, Value::int(i as i32), this])
+            .map_err(|e| e.to_string())?;
+
+        if Interpreter::value_to_bool(result) {
+            return Ok(Value::int(i as i32));
+        }
+    }
+
+    Ok(Value::int(-1))
 }
 
 /// parseInt - parse string to integer
@@ -4974,6 +5125,79 @@ fn native_string_replace_all(interp: &mut Interpreter, this: Value, args: &[Valu
     };
 
     let result = s.replace(&search, &replacement);
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.at - get character at index (supports negative indices)
+fn native_string_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "at called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let len = s.chars().count() as i32;
+
+    let index = args.get(0)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0);
+
+    // Normalize negative index
+    let actual_index = if index < 0 {
+        if (len + index) < 0 {
+            return Ok(Value::undefined());
+        }
+        (len + index) as usize
+    } else {
+        index as usize
+    };
+
+    if let Some(c) = s.chars().nth(actual_index) {
+        let result = c.to_string();
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(result);
+        Ok(Value::string(new_str_idx))
+    } else {
+        Ok(Value::undefined())
+    }
+}
+
+/// String.prototype.charCodeAt - get character code at index
+fn native_string_char_code_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "charCodeAt called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let index = args.get(0)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0) as usize;
+
+    if let Some(c) = s.chars().nth(index) {
+        Ok(Value::int(c as i32))
+    } else {
+        // Return NaN in real JS, but we use -1 as sentinel
+        Ok(Value::int(-1))
+    }
+}
+
+/// String.fromCharCode - create string from char codes
+fn native_string_from_char_code(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let mut result = String::new();
+
+    for arg in args {
+        if let Some(code) = arg.to_i32() {
+            if code >= 0 && code <= 0x10FFFF {
+                if let Some(c) = char::from_u32(code as u32) {
+                    result.push(c);
+                }
+            }
+        }
+    }
 
     let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
     interp.runtime_strings.push(result);

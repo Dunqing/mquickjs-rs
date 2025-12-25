@@ -3562,4 +3562,146 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1)); // First underscore at position 1
     }
+
+    // Array.prototype.copyWithin tests
+    #[test]
+    fn test_array_copy_within() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            arr.copyWithin(0, 3);
+            return arr[0] + arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(9)); // [4, 5, 3, 4, 5] -> 4 + 5 = 9
+    }
+
+    #[test]
+    fn test_array_copy_within_with_end() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            arr.copyWithin(1, 3, 4);
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(8)); // [1, 4, 3, 4, 5] -> 1 + 4 + 3 = 8
+    }
+
+    // Array.prototype.at tests
+    #[test]
+    fn test_array_at() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30, 40, 50];
+            return arr.at(2);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(30));
+    }
+
+    #[test]
+    fn test_array_at_negative() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30, 40, 50];
+            return arr.at(-1);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(50)); // Last element
+    }
+
+    // Array.prototype.findLast and findLastIndex tests
+    #[test]
+    fn test_array_find_last() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 2, 1];
+            function isTwo(x) { return x == 2; }
+            return arr.findLast(isTwo);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_array_find_last_index() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 2, 1];
+            function isTwo(x) { return x == 2; }
+            return arr.findLastIndex(isTwo);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3)); // Index of last 2
+    }
+
+    // String.prototype.at tests
+    #[test]
+    fn test_string_at() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'hello';
+            return s.at(1).charCodeAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(101)); // 'e' = 101
+    }
+
+    #[test]
+    fn test_string_at_negative() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'hello';
+            return s.at(-1).charCodeAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(111)); // 'o' = 111
+    }
+
+    // String.prototype.charCodeAt tests
+    #[test]
+    fn test_string_char_code_at() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'ABC';
+            return s.charCodeAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(65)); // 'A' = 65
+    }
+
+    #[test]
+    fn test_string_char_code_at_middle() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'hello';
+            return s.charCodeAt(2);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(108)); // 'l' = 108
+    }
+
+    // String.fromCharCode tests
+    #[test]
+    fn test_string_from_char_code() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = String.fromCharCode(72, 105);
+            return s.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2)); // "Hi".length = 2
+    }
+
+    #[test]
+    fn test_string_from_char_code_single() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = String.fromCharCode(65);
+            return s.charCodeAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(65)); // 'A' = 65
+    }
 }

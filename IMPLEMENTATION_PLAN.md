@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 335 passing
+**Test Count**: 347 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -441,4 +441,14 @@
 - String.prototype.replaceAll(search, replacement) - replace all occurrences
 - 8 new tests
 
-**Next Action**: Implement TypedArray or continue with more built-in methods
+**Stage 6.7 Additional Array/String Methods**:
+- Array.prototype.copyWithin(target, start, end?) - copy elements within array
+- Array.prototype.at(index) - get element at index (supports negative indices)
+- Array.prototype.findLast(callback) - find last matching element (ES2023)
+- Array.prototype.findLastIndex(callback) - find index of last match (ES2023)
+- String.prototype.at(index) - get character at index (supports negative indices)
+- String.prototype.charCodeAt(index) - get character code at index
+- String.fromCharCode(...codes) - create string from character codes
+- 12 new tests
+
+**Next Action**: Implement TypedArray, Map/Set, or Promise
