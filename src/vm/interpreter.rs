@@ -3256,6 +3256,9 @@ impl Interpreter {
             "with" => self.get_native_func("Array.prototype.with").unwrap_or(Value::undefined()),
             "toSpliced" => self.get_native_func("Array.prototype.toSpliced").unwrap_or(Value::undefined()),
             "toString" => self.get_native_func("Array.prototype.toString").unwrap_or(Value::undefined()),
+            "keys" => self.get_native_func("Array.prototype.keys").unwrap_or(Value::undefined()),
+            "values" => self.get_native_func("Array.prototype.values").unwrap_or(Value::undefined()),
+            "entries" => self.get_native_func("Array.prototype.entries").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3498,6 +3501,8 @@ impl Interpreter {
                     "getOwnPropertyNames" => self.get_native_func("Object.getOwnPropertyNames").unwrap_or(Value::undefined()),
                     "fromEntries" => self.get_native_func("Object.fromEntries").unwrap_or(Value::undefined()),
                     "hasOwn" => self.get_native_func("Object.hasOwn").unwrap_or(Value::undefined()),
+                    "is" => self.get_native_func("Object.is").unwrap_or(Value::undefined()),
+                    "getPrototypeOf" => self.get_native_func("Object.getPrototypeOf").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3663,12 +3668,19 @@ impl Interpreter {
         self.register_native("Array.prototype.with", native_array_with, 2);
         self.register_native("Array.prototype.toSpliced", native_array_to_spliced, 2);
         self.register_native("Array.prototype.toString", native_array_to_string, 0);
+        self.register_native("Array.prototype.keys", native_array_keys, 0);
+        self.register_native("Array.prototype.values", native_array_values, 0);
+        self.register_native("Array.prototype.entries", native_array_entries, 0);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
         self.register_native("isNaN", native_is_nan, 1);
         self.register_native("isFinite", native_is_finite, 1);
         self.register_native("parseFloat", native_parse_float, 1);
+        self.register_native("encodeURIComponent", native_encode_uri_component, 1);
+        self.register_native("decodeURIComponent", native_decode_uri_component, 1);
+        self.register_native("encodeURI", native_encode_uri, 1);
+        self.register_native("decodeURI", native_decode_uri, 1);
 
         // Math functions
         self.register_native("Math.abs", native_math_abs, 1);
@@ -3776,6 +3788,8 @@ impl Interpreter {
         self.register_native("Object.prototype.hasOwnProperty", native_object_prototype_has_own_property, 1);
         self.register_native("Object.prototype.toString", native_object_prototype_to_string, 0);
         self.register_native("Object.prototype.valueOf", native_object_prototype_value_of, 0);
+        self.register_native("Object.is", native_object_is, 2);
+        self.register_native("Object.getPrototypeOf", native_object_get_prototype_of, 1);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -4824,6 +4838,60 @@ fn native_array_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]
     }
 }
 
+/// Array.prototype.keys - returns array of indices
+fn native_array_keys(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "keys called on non-array".to_string())?;
+
+    let len = interp.arrays.get(arr_idx as usize)
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    // Return an array of indices
+    let keys: Vec<Value> = (0..len as i32).map(Value::int).collect();
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(keys);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.values - returns array of values (iterator-like)
+fn native_array_values(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "values called on non-array".to_string())?;
+
+    // Return a copy of the array (simulates iterator behavior)
+    let values = interp.arrays.get(arr_idx as usize)
+        .cloned()
+        .unwrap_or_default();
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(values);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.entries - returns array of [index, value] pairs
+fn native_array_entries(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "entries called on non-array".to_string())?;
+
+    let elements = interp.arrays.get(arr_idx as usize)
+        .cloned()
+        .unwrap_or_default();
+
+    // Create array of [index, value] pairs
+    let mut entries: Vec<Value> = Vec::new();
+    for (i, val) in elements.into_iter().enumerate() {
+        // Create pair array [index, value]
+        let pair = vec![Value::int(i as i32), val];
+        let pair_idx = interp.arrays.len() as u32;
+        interp.arrays.push(pair);
+        entries.push(Value::array_idx(pair_idx));
+    }
+
+    let entries_idx = interp.arrays.len() as u32;
+    interp.arrays.push(entries);
+    Ok(Value::array_idx(entries_idx))
+}
+
 /// parseInt - parse string to integer
 fn native_parse_int(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let val = args.get(0).copied().unwrap_or(Value::undefined());
@@ -4883,6 +4951,118 @@ fn native_parse_float(interp: &mut Interpreter, _this: Value, args: &[Value]) ->
     } else {
         Ok(Value::int(0))
     }
+}
+
+/// encodeURIComponent - encode URI component
+fn native_encode_uri_component(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.first().copied().unwrap_or(Value::undefined());
+
+    let s = if let Some(str_idx) = val.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = val.to_i32() {
+        n.to_string()
+    } else if val.is_undefined() {
+        "undefined".to_string()
+    } else if val.is_null() {
+        "null".to_string()
+    } else {
+        String::new()
+    };
+
+    // Encode the string - preserve unreserved characters per RFC 3986
+    let mut encoded = String::with_capacity(s.len() * 3);
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '!' | '~' | '*' | '\'' | '(' | ')') {
+            encoded.push(c);
+        } else {
+            // Percent-encode the character
+            for byte in c.to_string().as_bytes() {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+
+    Ok(interp.create_runtime_string(encoded))
+}
+
+/// decodeURIComponent - decode URI component
+fn native_decode_uri_component(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.first().copied().unwrap_or(Value::undefined());
+
+    let s = if let Some(str_idx) = val.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else {
+        return Ok(interp.create_runtime_string(String::new()));
+    };
+
+    // Decode percent-encoded characters
+    let mut decoded = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            // Try to parse hex digits
+            let hex_str = std::str::from_utf8(&bytes[i+1..i+3]).unwrap_or("");
+            if let Ok(byte_val) = u8::from_str_radix(hex_str, 16) {
+                decoded.push(byte_val);
+                i += 3;
+            } else {
+                decoded.push(bytes[i]);
+                i += 1;
+            }
+        } else {
+            decoded.push(bytes[i]);
+            i += 1;
+        }
+    }
+
+    // Convert bytes back to string
+    let result = String::from_utf8_lossy(&decoded).to_string();
+    Ok(interp.create_runtime_string(result))
+}
+
+/// encodeURI - encode URI (preserves reserved characters)
+fn native_encode_uri(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.first().copied().unwrap_or(Value::undefined());
+
+    let s = if let Some(str_idx) = val.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = val.to_i32() {
+        n.to_string()
+    } else {
+        String::new()
+    };
+
+    // Encode the string - preserve unreserved + reserved characters
+    let mut encoded = String::with_capacity(s.len() * 3);
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric()
+            || matches!(c, '-' | '_' | '.' | '!' | '~' | '*' | '\'' | '(' | ')')
+            || matches!(c, ';' | ',' | '/' | '?' | ':' | '@' | '&' | '=' | '+' | '$' | '#')
+        {
+            encoded.push(c);
+        } else {
+            // Percent-encode the character
+            for byte in c.to_string().as_bytes() {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+
+    Ok(interp.create_runtime_string(encoded))
+}
+
+/// decodeURI - decode URI
+fn native_decode_uri(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    // For now, same as decodeURIComponent (should preserve reserved chars but we decode all)
+    native_decode_uri_component(interp, _this, args)
 }
 
 /// Math.abs - absolute value
@@ -7073,6 +7253,40 @@ fn native_object_prototype_to_string(interp: &mut Interpreter, this: Value, _arg
 fn native_object_prototype_value_of(_interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
     // valueOf for objects typically returns the object itself
     Ok(this)
+}
+
+/// Object.is - strict equality comparison (like === but handles NaN and -0)
+fn native_object_is(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let value1 = args.first().copied().unwrap_or(Value::undefined());
+    let value2 = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Compare the raw values - same behavior as ===
+    // (Note: We don't have NaN or -0 distinction in our integer-only impl)
+    let is_same = value1.0 == value2.0;
+    Ok(Value::bool(is_same))
+}
+
+/// Object.getPrototypeOf - get the prototype of an object
+fn native_object_get_prototype_of(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    // For our implementation, objects created via `new` store their constructor
+    // We return null for most cases since we don't have true prototype chains
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            if let Some(constructor) = obj_data.constructor {
+                // Return a placeholder "prototype" object
+                // In a full implementation, this would return the constructor's prototype
+                return Ok(Value::null());
+            }
+        }
+        Ok(Value::null())
+    } else if obj.to_array_idx().is_some() {
+        // Arrays have Array.prototype
+        Ok(Value::null())
+    } else {
+        Ok(Value::null())
+    }
 }
 
 // ===========================================

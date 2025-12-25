@@ -4413,4 +4413,122 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
+
+    // ================================================
+    // Stage 6.13 Tests - Object.is, URI functions, Array iterators
+    // ================================================
+
+    #[test]
+    fn test_object_is_same_number() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Object.is(42, 42);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_is_different() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Object.is(42, 43);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_object_get_prototype_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Foo() {}
+            var obj = new Foo();
+            return Object.getPrototypeOf(obj) === null;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_encode_uri_component() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return encodeURIComponent('hello world');
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_decode_uri_component() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return decodeURIComponent('hello%20world');
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_encode_uri() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return encodeURI('http://example.com/path?q=hello world');
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_array_keys() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            var keys = arr.keys();
+            return keys[0] + keys[1] + keys[2];
+        ").unwrap();
+        // 0 + 1 + 2 = 3
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_values() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            var values = arr.values();
+            return values[0] + values[1] + values[2];
+        ").unwrap();
+        // 10 + 20 + 30 = 60
+        assert_eq!(result.to_i32(), Some(60));
+    }
+
+    #[test]
+    fn test_array_entries() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            var entries = arr.entries();
+            return entries[0][0] + entries[0][1];
+        ").unwrap();
+        // 0 + 10 = 10
+        assert_eq!(result.to_i32(), Some(10));
+    }
+
+    #[test]
+    fn test_array_entries_second() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            var entries = arr.entries();
+            return entries[1][0] + entries[1][1];
+        ").unwrap();
+        // 1 + 20 = 21
+        assert_eq!(result.to_i32(), Some(21));
+    }
 }

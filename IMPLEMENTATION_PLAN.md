@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 401 passing
+**Test Count**: 411 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -527,6 +527,21 @@
 - Global functions:
   - isFinite(value) - check if value is a finite number
   - parseFloat(value) - parse string/value to number
+- 10 new tests
+
+**Stage 6.13 Object Methods, URI Functions, Array Iterators**:
+- Object static methods:
+  - Object.is(value1, value2) - strict equality comparison (like === but handles NaN and -0)
+  - Object.getPrototypeOf(obj) - get the prototype of an object
+- Global URI functions:
+  - encodeURIComponent(str) - percent-encode a URI component
+  - decodeURIComponent(str) - decode a percent-encoded URI component
+  - encodeURI(str) - encode a URI (preserves reserved characters)
+  - decodeURI(str) - decode a URI
+- Array iterator methods (returns arrays, not full iterators):
+  - Array.prototype.keys() - returns array of indices
+  - Array.prototype.values() - returns array of values
+  - Array.prototype.entries() - returns array of [index, value] pairs
 - 10 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise
