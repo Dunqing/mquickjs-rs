@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 359 passing
+**Test Count**: 371 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -472,5 +472,23 @@
 - Value types: MAP_OBJECT_MARKER (bit 18), SET_OBJECT_MARKER (bit 17)
 - MapObject and SetObject storage structures with insertion order preservation
 - 12 new tests (6 Map, 6 Set)
+
+**Stage 6.9 Additional Math Methods and Number.prototype**:
+- Additional Math methods:
+  - Math.random() - returns random number between 0 and 1 (integer approximation)
+  - Math.sign(x) - returns -1, 0, or 1 based on sign
+  - Math.trunc(x) - truncates decimal part
+  - Math.log(x) - natural logarithm (integer approximation)
+  - Math.log10(x) - base-10 logarithm (integer approximation)
+  - Math.log2(x) - base-2 logarithm (integer approximation)
+  - Math.exp(x) - e^x (integer approximation)
+  - Math.clz32(x) - count leading zeros in 32-bit integer
+  - Math.imul(a, b) - 32-bit integer multiplication
+- Array.prototype.reduceRight(callback, initial?) - reduce from right to left
+- Number.prototype methods:
+  - Number.prototype.toFixed(digits) - format with fixed decimal places
+  - Number.prototype.toString(radix?) - convert to string with optional base
+- get_number_property() for Number.prototype method dispatch
+- 12 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

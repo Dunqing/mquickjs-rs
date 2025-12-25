@@ -167,6 +167,23 @@ impl Context {
     pub fn memory_stats(&self) -> MemoryStats {
         self.heap.stats()
     }
+
+    /// Convert a value to a Rust string (for testing and debugging)
+    pub fn value_to_string(&self, val: &Value) -> Option<String> {
+        if let Some(str_idx) = val.to_string_idx() {
+            self.interpreter.get_string_by_idx(str_idx).map(|s| s.to_string())
+        } else if let Some(n) = val.to_i32() {
+            Some(n.to_string())
+        } else if val.is_bool() {
+            Some(if val.to_bool().unwrap_or(false) { "true" } else { "false" }.to_string())
+        } else if val.is_null() {
+            Some("null".to_string())
+        } else if val.is_undefined() {
+            Some("undefined".to_string())
+        } else {
+            None
+        }
+    }
 }
 
 /// Memory usage statistics
@@ -3874,5 +3891,153 @@ mod tests {
             return s.size;
         ").unwrap();
         assert_eq!(result.to_i32(), Some(3));
+    }
+
+    // =========================================================================
+    // Stage 6.9 - More Math methods, reduceRight, Number.prototype
+    // =========================================================================
+
+    #[test]
+    fn test_array_reduce_right() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test basic reduceRight - should go from right to left
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4];
+            function sub(acc, val) { return acc - val; }
+            return arr.reduceRight(sub);
+        ").unwrap();
+        // 4 - 3 = 1, 1 - 2 = -1, -1 - 1 = -2
+        assert_eq!(result.to_i32(), Some(-2));
+    }
+
+    #[test]
+    fn test_array_reduce_right_with_initial() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            function add(acc, val) { return acc + val; }
+            return arr.reduceRight(add, 10);
+        ").unwrap();
+        // 10 + 3 = 13, 13 + 2 = 15, 15 + 1 = 16
+        assert_eq!(result.to_i32(), Some(16));
+    }
+
+    #[test]
+    fn test_array_reduce_right_multiply() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test multiplication to verify order
+        let result = ctx.eval("
+            var arr = [2, 3, 4];
+            function mul(acc, val) { return acc * val; }
+            return arr.reduceRight(mul);
+        ").unwrap();
+        // 4 * 3 = 12, 12 * 2 = 24
+        assert_eq!(result.to_i32(), Some(24));
+    }
+
+    #[test]
+    fn test_math_sign() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("return Math.sign(5);").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+
+        let result = ctx.eval("return Math.sign(-5);").unwrap();
+        assert_eq!(result.to_i32(), Some(-1));
+
+        let result = ctx.eval("return Math.sign(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_math_trunc() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("return Math.trunc(4);").unwrap();
+        assert_eq!(result.to_i32(), Some(4));
+
+        let result = ctx.eval("return Math.trunc(-4);").unwrap();
+        assert_eq!(result.to_i32(), Some(-4));
+    }
+
+    #[test]
+    fn test_math_clz32() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("return Math.clz32(1);").unwrap();
+        assert_eq!(result.to_i32(), Some(31));
+
+        let result = ctx.eval("return Math.clz32(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(32));
+    }
+
+    #[test]
+    fn test_math_imul() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("return Math.imul(3, 4);").unwrap();
+        assert_eq!(result.to_i32(), Some(12));
+
+        let result = ctx.eval("return Math.imul(-3, 4);").unwrap();
+        assert_eq!(result.to_i32(), Some(-12));
+    }
+
+    #[test]
+    fn test_math_log_exp() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Test basic log values (using integer approximations)
+        let result = ctx.eval("return Math.log(1);").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+
+        let result = ctx.eval("return Math.exp(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_number_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var n = 255;
+            return n.toString(16);
+        ").unwrap();
+        assert!(ctx.value_to_string(&result).unwrap().contains("ff"));
+    }
+
+    #[test]
+    fn test_number_to_string_binary() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var n = 5;
+            return n.toString(2);
+        ").unwrap();
+        assert!(ctx.value_to_string(&result).unwrap().contains("101"));
+    }
+
+    #[test]
+    fn test_number_to_fixed() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var n = 123;
+            return n.toFixed(2);
+        ").unwrap();
+        assert!(ctx.value_to_string(&result).unwrap().contains("123.00"));
+    }
+
+    #[test]
+    fn test_number_to_fixed_zero() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var n = 42;
+            return n.toFixed(0);
+        ").unwrap();
+        assert!(ctx.value_to_string(&result).unwrap().contains("42"));
     }
 }

@@ -2466,6 +2466,10 @@ impl Interpreter {
                         // String property access - check for String.prototype methods
                         let val = self.get_string_property(obj, prop_name);
                         self.stack.push(val);
+                    } else if obj.is_int() {
+                        // Number property access - check for Number.prototype methods
+                        let val = self.get_number_property(prop_name);
+                        self.stack.push(val);
                     } else {
                         // For non-objects, return undefined
                         self.stack.push(Value::undefined());
@@ -2504,6 +2508,9 @@ impl Interpreter {
                         self.object_get_property(obj_idx, prop_name)
                     } else if obj.is_string() {
                         self.get_string_property(obj, prop_name)
+                    } else if obj.is_int() {
+                        // Number.prototype methods
+                        self.get_number_property(prop_name)
                     } else if obj.is_closure() || obj.to_func_ptr().is_some() {
                         // Function.prototype methods (call, apply, bind)
                         self.get_function_property(prop_name)
@@ -3194,6 +3201,7 @@ impl Interpreter {
             "filter" => self.get_native_func("Array.prototype.filter").unwrap_or(Value::undefined()),
             "forEach" => self.get_native_func("Array.prototype.forEach").unwrap_or(Value::undefined()),
             "reduce" => self.get_native_func("Array.prototype.reduce").unwrap_or(Value::undefined()),
+            "reduceRight" => self.get_native_func("Array.prototype.reduceRight").unwrap_or(Value::undefined()),
             "find" => self.get_native_func("Array.prototype.find").unwrap_or(Value::undefined()),
             "findIndex" => self.get_native_func("Array.prototype.findIndex").unwrap_or(Value::undefined()),
             "some" => self.get_native_func("Array.prototype.some").unwrap_or(Value::undefined()),
@@ -3250,6 +3258,15 @@ impl Interpreter {
             "replaceAll" => self.get_native_func("String.prototype.replaceAll").unwrap_or(Value::undefined()),
             "at" => self.get_native_func("String.prototype.at").unwrap_or(Value::undefined()),
             "charCodeAt" => self.get_native_func("String.prototype.charCodeAt").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Get a property from a number (Number.prototype methods)
+    fn get_number_property(&self, prop_name: &str) -> Value {
+        match prop_name {
+            "toFixed" => self.get_native_func("Number.prototype.toFixed").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Number.prototype.toString").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3360,6 +3377,15 @@ impl Interpreter {
                     "round" => self.get_native_func("Math.round").unwrap_or(Value::undefined()),
                     "sqrt" => self.get_native_func("Math.sqrt").unwrap_or(Value::undefined()),
                     "pow" => self.get_native_func("Math.pow").unwrap_or(Value::undefined()),
+                    "random" => self.get_native_func("Math.random").unwrap_or(Value::undefined()),
+                    "sign" => self.get_native_func("Math.sign").unwrap_or(Value::undefined()),
+                    "trunc" => self.get_native_func("Math.trunc").unwrap_or(Value::undefined()),
+                    "log" => self.get_native_func("Math.log").unwrap_or(Value::undefined()),
+                    "log10" => self.get_native_func("Math.log10").unwrap_or(Value::undefined()),
+                    "log2" => self.get_native_func("Math.log2").unwrap_or(Value::undefined()),
+                    "exp" => self.get_native_func("Math.exp").unwrap_or(Value::undefined()),
+                    "clz32" => self.get_native_func("Math.clz32").unwrap_or(Value::undefined()),
+                    "imul" => self.get_native_func("Math.imul").unwrap_or(Value::undefined()),
                     "PI" => Value::int(3), // TODO: proper float value 3.14159...
                     "E" => Value::int(2),  // TODO: proper float value 2.71828...
                     _ => Value::undefined(),
@@ -3558,6 +3584,7 @@ impl Interpreter {
         self.register_native("Array.prototype.filter", native_array_filter, 1);
         self.register_native("Array.prototype.forEach", native_array_foreach, 1);
         self.register_native("Array.prototype.reduce", native_array_reduce, 1);
+        self.register_native("Array.prototype.reduceRight", native_array_reduce_right, 1);
         self.register_native("Array.prototype.find", native_array_find, 1);
         self.register_native("Array.prototype.findIndex", native_array_find_index, 1);
         self.register_native("Array.prototype.some", native_array_some, 1);
@@ -3588,6 +3615,19 @@ impl Interpreter {
         self.register_native("Math.pow", native_math_pow, 2);
         self.register_native("Math.max", native_math_max, 0);
         self.register_native("Math.min", native_math_min, 0);
+        self.register_native("Math.random", native_math_random, 0);
+        self.register_native("Math.sign", native_math_sign, 1);
+        self.register_native("Math.trunc", native_math_trunc, 1);
+        self.register_native("Math.log", native_math_log, 1);
+        self.register_native("Math.log10", native_math_log10, 1);
+        self.register_native("Math.log2", native_math_log2, 1);
+        self.register_native("Math.exp", native_math_exp, 1);
+        self.register_native("Math.clz32", native_math_clz32, 1);
+        self.register_native("Math.imul", native_math_imul, 2);
+
+        // Number methods
+        self.register_native("Number.prototype.toFixed", native_number_to_fixed, 1);
+        self.register_native("Number.prototype.toString", native_number_to_string, 1);
 
         // String methods
         self.register_native("String.prototype.charAt", native_string_char_at, 1);
@@ -3985,6 +4025,53 @@ fn native_array_reduce(interp: &mut Interpreter, this: Value, args: &[Value]) ->
 
     for (i, element) in arr_clone.iter().enumerate().skip(start_idx) {
         let call_args = vec![accumulator, *element, Value::int(i as i32), this];
+        accumulator = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(accumulator)
+}
+
+/// Array.prototype.reduceRight - reduce array from right to left
+fn native_array_reduce_right(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "reduceRight called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "reduceRight requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("reduceRight callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    if arr_clone.is_empty() && args.len() < 2 {
+        return Err("reduceRight of empty array with no initial value".to_string());
+    }
+
+    let len = arr_clone.len();
+
+    // Get initial value or last element
+    let (mut accumulator, skip_last) = if args.len() >= 2 {
+        (args[1], false)
+    } else {
+        (arr_clone[len - 1], true)
+    };
+
+    // Iterate from right to left
+    let iter_range: Box<dyn Iterator<Item = usize>> = if skip_last {
+        Box::new((0..len - 1).rev())
+    } else {
+        Box::new((0..len).rev())
+    };
+
+    for i in iter_range {
+        let element = arr_clone[i];
+        let call_args = vec![accumulator, element, Value::int(i as i32), this];
         accumulator = interp.call_value(callback, Value::undefined(), &call_args)
             .map_err(|e| e.to_string())?;
     }
@@ -4651,6 +4738,166 @@ fn native_math_pow(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> R
     } else {
         Err("Math.pow requires numbers".to_string())
     }
+}
+
+/// Math.random - return random number between 0 and 1 (returns integer 0 or 1 for now)
+fn native_math_random(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
+    // Simple pseudo-random using system time
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    // Return a pseudo-random integer 0-999 (scaled to simulate 0-1 range)
+    Ok(Value::int((nanos % 1000) as i32))
+}
+
+/// Math.sign - return sign of number (-1, 0, or 1)
+fn native_math_sign(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    Ok(Value::int(n.signum()))
+}
+
+/// Math.trunc - truncate decimal part (integer already, so identity for i32)
+fn native_math_trunc(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    Ok(Value::int(n))
+}
+
+/// Math.log - natural logarithm (integer approximation)
+fn native_math_log(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n <= 0 {
+        Ok(Value::int(i32::MIN)) // Represents -Infinity/NaN
+    } else {
+        // Integer approximation of ln(n)
+        Ok(Value::int((n as f64).ln() as i32))
+    }
+}
+
+/// Math.log10 - base 10 logarithm (integer approximation)
+fn native_math_log10(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n <= 0 {
+        Ok(Value::int(i32::MIN))
+    } else {
+        Ok(Value::int((n as f64).log10() as i32))
+    }
+}
+
+/// Math.log2 - base 2 logarithm (integer approximation)
+fn native_math_log2(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n <= 0 {
+        Ok(Value::int(i32::MIN))
+    } else {
+        Ok(Value::int((n as f64).log2() as i32))
+    }
+}
+
+/// Math.exp - e^x (integer approximation)
+fn native_math_exp(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let result = (n as f64).exp();
+    if result > i32::MAX as f64 {
+        Ok(Value::int(i32::MAX))
+    } else {
+        Ok(Value::int(result as i32))
+    }
+}
+
+/// Math.clz32 - count leading zeros in 32-bit integer
+fn native_math_clz32(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as u32;
+    Ok(Value::int(n.leading_zeros() as i32))
+}
+
+/// Math.imul - 32-bit integer multiplication
+fn native_math_imul(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let a = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let b = args.get(1).and_then(|v| v.to_i32()).unwrap_or(0);
+    Ok(Value::int(a.wrapping_mul(b)))
+}
+
+// =============================================================================
+// Number.prototype methods
+// =============================================================================
+
+/// Number.prototype.toFixed - format number with fixed decimal places
+fn native_number_to_fixed(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let num = if let Some(n) = this.to_i32() {
+        n as f64
+    } else {
+        return Err("toFixed called on non-number".to_string());
+    };
+
+    let digits = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+
+    if digits < 0 || digits > 100 {
+        return Err("toFixed() digits argument must be between 0 and 100".to_string());
+    }
+
+    // Format with fixed decimal places using integer math
+    let multiplier = 10_i64.pow(digits as u32);
+    let scaled = (num * multiplier as f64).round() as i64;
+
+    let result = if digits == 0 {
+        format!("{}", scaled)
+    } else {
+        let int_part = scaled / multiplier;
+        let frac_part = (scaled % multiplier).abs();
+        format!("{}.{:0>width$}", int_part, frac_part, width = digits as usize)
+    };
+
+    Ok(interp.create_runtime_string(result))
+}
+
+/// Number.prototype.toString - convert number to string with optional radix
+fn native_number_to_string(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let num = if let Some(n) = this.to_i32() {
+        n
+    } else {
+        return Err("toString called on non-number".to_string());
+    };
+
+    let radix = args.get(0).and_then(|v| v.to_i32()).unwrap_or(10);
+
+    if radix < 2 || radix > 36 {
+        return Err("toString() radix must be between 2 and 36".to_string());
+    }
+
+    let result = if radix == 10 {
+        format!("{}", num)
+    } else {
+        // Convert to string with given radix
+        let mut n = num.abs() as u32;
+        let mut digits = Vec::new();
+
+        if n == 0 {
+            digits.push('0');
+        } else {
+            while n > 0 {
+                let digit = (n % radix as u32) as u8;
+                let c = if digit < 10 {
+                    (b'0' + digit) as char
+                } else {
+                    (b'a' + digit - 10) as char
+                };
+                digits.push(c);
+                n /= radix as u32;
+            }
+        }
+
+        digits.reverse();
+        let s: String = digits.into_iter().collect();
+        if num < 0 {
+            format!("-{}", s)
+        } else {
+            s
+        }
+    };
+
+    Ok(interp.create_runtime_string(result))
 }
 
 // =============================================================================
