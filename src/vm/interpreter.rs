@@ -2449,6 +2449,12 @@ impl Interpreter {
                     } else if obj.is_array() {
                         // Array property access - check for Array.prototype methods
                         let val = self.get_array_property(obj, prop_name);
+                        // Fall back to Object.prototype methods for arrays
+                        let val = if val.is_undefined() {
+                            self.get_object_prototype_property(prop_name)
+                        } else {
+                            val
+                        };
                         self.stack.push(val);
                     } else if let Some(err_idx) = obj.to_error_object_idx() {
                         // Error object property access
@@ -2469,6 +2475,12 @@ impl Interpreter {
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         // Get property from regular object
                         let val = self.object_get_property(obj_idx, prop_name);
+                        // Check Object.prototype methods if property not found
+                        let val = if val.is_undefined() {
+                            self.get_object_prototype_property(prop_name)
+                        } else {
+                            val
+                        };
                         self.stack.push(val);
                     } else if obj.is_string() {
                         // String property access - check for String.prototype methods
@@ -2505,7 +2517,13 @@ impl Interpreter {
                     let val = if let Some(builtin_idx) = obj.to_builtin_object_idx() {
                         self.get_builtin_property(builtin_idx, prop_name)
                     } else if obj.is_array() {
-                        self.get_array_property(obj, prop_name)
+                        let val = self.get_array_property(obj, prop_name);
+                        // Fall back to Object.prototype methods for arrays
+                        if val.is_undefined() {
+                            self.get_object_prototype_property(prop_name)
+                        } else {
+                            val
+                        }
                     } else if let Some(regex_idx) = obj.to_regexp_object_idx() {
                         self.get_regexp_property(regex_idx, prop_name)
                     } else if let Some(map_idx) = obj.to_map_object_idx() {
@@ -2513,7 +2531,14 @@ impl Interpreter {
                     } else if let Some(set_idx) = obj.to_set_object_idx() {
                         self.get_set_property(set_idx, prop_name)
                     } else if let Some(obj_idx) = obj.to_object_idx() {
-                        self.object_get_property(obj_idx, prop_name)
+                        // First check object's own properties
+                        let val = self.object_get_property(obj_idx, prop_name);
+                        if val.is_undefined() {
+                            // Check Object.prototype methods
+                            self.get_object_prototype_property(prop_name)
+                        } else {
+                            val
+                        }
                     } else if obj.is_string() {
                         self.get_string_property(obj, prop_name)
                     } else if obj.is_int() {
@@ -3230,6 +3255,7 @@ impl Interpreter {
             "toReversed" => self.get_native_func("Array.prototype.toReversed").unwrap_or(Value::undefined()),
             "with" => self.get_native_func("Array.prototype.with").unwrap_or(Value::undefined()),
             "toSpliced" => self.get_native_func("Array.prototype.toSpliced").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Array.prototype.toString").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3280,6 +3306,16 @@ impl Interpreter {
         match prop_name {
             "toFixed" => self.get_native_func("Number.prototype.toFixed").unwrap_or(Value::undefined()),
             "toString" => self.get_native_func("Number.prototype.toString").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Get a property from Object.prototype (for all objects)
+    fn get_object_prototype_property(&self, prop_name: &str) -> Value {
+        match prop_name {
+            "hasOwnProperty" => self.get_native_func("Object.prototype.hasOwnProperty").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Object.prototype.toString").unwrap_or(Value::undefined()),
+            "valueOf" => self.get_native_func("Object.prototype.valueOf").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3626,10 +3662,13 @@ impl Interpreter {
         self.register_native("Array.prototype.toReversed", native_array_to_reversed, 0);
         self.register_native("Array.prototype.with", native_array_with, 2);
         self.register_native("Array.prototype.toSpliced", native_array_to_spliced, 2);
+        self.register_native("Array.prototype.toString", native_array_to_string, 0);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
         self.register_native("isNaN", native_is_nan, 1);
+        self.register_native("isFinite", native_is_finite, 1);
+        self.register_native("parseFloat", native_parse_float, 1);
 
         // Math functions
         self.register_native("Math.abs", native_math_abs, 1);
@@ -3734,6 +3773,9 @@ impl Interpreter {
         self.register_native("Object.getOwnPropertyNames", native_object_get_own_property_names, 1);
         self.register_native("Object.fromEntries", native_object_from_entries, 1);
         self.register_native("Object.hasOwn", native_object_has_own, 2);
+        self.register_native("Object.prototype.hasOwnProperty", native_object_prototype_has_own_property, 1);
+        self.register_native("Object.prototype.toString", native_object_prototype_to_string, 0);
+        self.register_native("Object.prototype.valueOf", native_object_prototype_value_of, 0);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -4752,6 +4794,36 @@ fn native_array_to_spliced(interp: &mut Interpreter, this: Value, args: &[Value]
     Ok(Value::array_idx(new_arr_idx))
 }
 
+/// Array.prototype.toString - returns string representation of array
+fn native_array_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "toString called on non-array".to_string())?;
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        let parts: Vec<String> = arr.iter().map(|v| {
+            if let Some(n) = v.to_i32() {
+                n.to_string()
+            } else if v.is_undefined() {
+                String::new()
+            } else if v.is_null() {
+                String::new()
+            } else if let Some(b) = v.to_bool() {
+                b.to_string()
+            } else if let Some(str_idx) = v.to_string_idx() {
+                interp.get_string_by_idx(str_idx)
+                    .map(|s| s.to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        }).collect();
+        let joined = parts.join(",");
+        Ok(interp.create_runtime_string(joined))
+    } else {
+        Ok(interp.create_runtime_string(String::new()))
+    }
+}
+
 /// parseInt - parse string to integer
 fn native_parse_int(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let val = args.get(0).copied().unwrap_or(Value::undefined());
@@ -4773,6 +4845,43 @@ fn native_is_nan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Res
         Ok(Value::bool(false))
     } else {
         Ok(Value::bool(true))
+    }
+}
+
+/// isFinite - check if value is a finite number
+fn native_is_finite(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // For our integer-only implementation, all valid integers are finite
+    if val.to_i32().is_some() {
+        Ok(Value::bool(true))
+    } else {
+        Ok(Value::bool(false))
+    }
+}
+
+/// parseFloat - parse string to float
+fn native_parse_float(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(n) = val.to_i32() {
+        // Already a number
+        Ok(Value::int(n))
+    } else if let Some(str_idx) = val.to_string_idx() {
+        // Try to parse as string
+        if let Some(s) = interp.get_string_by_idx(str_idx) {
+            let s = s.trim();
+            if let Ok(n) = s.parse::<i32>() {
+                Ok(Value::int(n))
+            } else {
+                // Return NaN (represented as 0 for now since we don't have NaN)
+                Ok(Value::int(0))
+            }
+        } else {
+            Ok(Value::int(0))
+        }
+    } else {
+        Ok(Value::int(0))
     }
 }
 
@@ -6900,6 +7009,70 @@ fn native_object_has_own(interp: &mut Interpreter, _this: Value, args: &[Value])
     }
 
     Ok(Value::bool(false))
+}
+
+/// Object.prototype.hasOwnProperty - check if object has own property
+fn native_object_prototype_has_own_property(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let prop = args.first().copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    if let Some(obj_idx) = this.to_object_idx() {
+        let has_prop = interp.objects
+            .get(obj_idx as usize)
+            .map(|o| o.properties.iter().any(|(k, _)| k == &prop_name))
+            .unwrap_or(false);
+        return Ok(Value::bool(has_prop));
+    } else if let Some(arr_idx) = this.to_array_idx() {
+        // For arrays, check if index exists
+        if let Ok(idx) = prop_name.parse::<usize>() {
+            let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+            return Ok(Value::bool(idx < len));
+        } else if prop_name == "length" {
+            return Ok(Value::bool(true));
+        }
+    }
+
+    Ok(Value::bool(false))
+}
+
+/// Object.prototype.toString - returns string representation of object
+fn native_object_prototype_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let type_str = if this.is_undefined() {
+        "[object Undefined]"
+    } else if this.is_null() {
+        "[object Null]"
+    } else if this.to_array_idx().is_some() {
+        "[object Array]"
+    } else if this.to_object_idx().is_some() {
+        "[object Object]"
+    } else if this.to_func_idx().is_some() || this.to_native_func_idx().is_some() {
+        "[object Function]"
+    } else if this.to_string_idx().is_some() {
+        "[object String]"
+    } else if this.to_i32().is_some() {
+        "[object Number]"
+    } else if this.is_bool() {
+        "[object Boolean]"
+    } else {
+        "[object Object]"
+    };
+    Ok(interp.create_runtime_string(type_str.to_string()))
+}
+
+/// Object.prototype.valueOf - returns the primitive value of the object
+fn native_object_prototype_value_of(_interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    // valueOf for objects typically returns the object itself
+    Ok(this)
 }
 
 // ===========================================

@@ -4296,4 +4296,121 @@ mod tests {
         // [1, 4, 5] -> length 3
         assert_eq!(result.to_i32(), Some(3));
     }
+
+    // ================================================
+    // Stage 6.12 Tests - Object.prototype instance methods
+    // ================================================
+
+    #[test]
+    fn test_object_prototype_has_own_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; this.y = 2; }
+            var obj = new Obj();
+            return obj.hasOwnProperty('x');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_prototype_has_own_property_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return obj.hasOwnProperty('y');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_object_prototype_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return obj.toString();
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_object_prototype_value_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 42; }
+            var obj = new Obj();
+            var v = obj.valueOf();
+            return v.x;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_array_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return arr.toString();
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_is_finite_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return isFinite(42);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_is_finite_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var x;
+            return isFinite(x);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_parse_float_integer() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return parseFloat(42);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_array_has_own_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            return arr.hasOwnProperty(1);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_array_has_own_property_length() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            return arr.hasOwnProperty('length');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
 }

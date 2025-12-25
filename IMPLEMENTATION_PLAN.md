@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 391 passing
+**Test Count**: 401 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -515,5 +515,18 @@
 - ES2023 Array method:
   - Array.prototype.toSpliced(start, deleteCount, ...items) - returns new spliced array (non-mutating)
 - 8 new tests
+
+**Stage 6.12 Object.prototype Instance Methods, Global Functions**:
+- Object.prototype instance methods:
+  - Object.prototype.hasOwnProperty(prop) - check if object has own property (instance method)
+  - Object.prototype.toString() - returns string representation ("[object Object]", "[object Array]", etc.)
+  - Object.prototype.valueOf() - returns the primitive value of the object
+- get_object_prototype_property() for Object.prototype method dispatch
+- GetField/GetField2 handlers now fall back to Object.prototype for objects and arrays
+- Array.prototype.toString() - returns comma-separated string representation
+- Global functions:
+  - isFinite(value) - check if value is a finite number
+  - parseFloat(value) - parse string/value to number
+- 10 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise
