@@ -32,6 +32,10 @@ pub const BUILTIN_RANGE_ERROR: u32 = 9;
 pub const BUILTIN_DATE: u32 = 10;
 /// String object index
 pub const BUILTIN_STRING: u32 = 11;
+/// Object object index
+pub const BUILTIN_OBJECT: u32 = 12;
+/// Array object index
+pub const BUILTIN_ARRAY: u32 = 13;
 
 /// Native function signature
 ///
@@ -1824,6 +1828,8 @@ impl Interpreter {
                         "Number" => Some(Value::builtin_object(BUILTIN_NUMBER)),
                         "Boolean" => Some(Value::builtin_object(BUILTIN_BOOLEAN)),
                         "String" => Some(Value::builtin_object(BUILTIN_STRING)),
+                        "Object" => Some(Value::builtin_object(BUILTIN_OBJECT)),
+                        "Array" => Some(Value::builtin_object(BUILTIN_ARRAY)),
                         "console" => Some(Value::builtin_object(BUILTIN_CONSOLE)),
                         "Date" => Some(Value::builtin_object(BUILTIN_DATE)),
                         "Error" => Some(Value::builtin_object(BUILTIN_ERROR)),
@@ -2862,6 +2868,22 @@ impl Interpreter {
                     _ => Value::undefined(),
                 }
             }
+            BUILTIN_OBJECT => {
+                // Object static methods
+                match prop_name {
+                    "keys" => self.get_native_func("Object.keys").unwrap_or(Value::undefined()),
+                    "values" => self.get_native_func("Object.values").unwrap_or(Value::undefined()),
+                    "entries" => self.get_native_func("Object.entries").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
+            BUILTIN_ARRAY => {
+                // Array static methods
+                match prop_name {
+                    "isArray" => self.get_native_func("Array.isArray").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             _ => Value::undefined(),
         }
     }
@@ -3022,6 +3044,14 @@ impl Interpreter {
 
         // Date methods
         self.register_native("Date.now", native_date_now, 0);
+
+        // Object static methods
+        self.register_native("Object.keys", native_object_keys, 1);
+        self.register_native("Object.values", native_object_values, 1);
+        self.register_native("Object.entries", native_object_entries, 1);
+
+        // Array static methods
+        self.register_native("Array.isArray", native_array_is_array, 1);
     }
 }
 
@@ -4110,6 +4140,120 @@ fn native_date_now(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> 
     let max_val = 1 << 30; // 2^30 = 1073741824
 
     Ok(Value::int((millis % max_val) as i32))
+}
+
+// ===========================================
+// Object Static Methods
+// ===========================================
+
+/// Object.keys - returns array of object's own property names
+fn native_object_keys(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        // Clone keys first to avoid borrow issues
+        let key_strings: Vec<String> = interp.objects
+            .get(obj_idx as usize)
+            .map(|obj| obj.properties.iter().map(|(k, _)| k.clone()).collect())
+            .unwrap_or_default();
+
+        // Now create string values
+        let keys: Vec<Value> = key_strings.into_iter()
+            .map(|k| interp.create_runtime_string(k))
+            .collect();
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(keys);
+        return Ok(Value::array_idx(arr_idx));
+    } else if let Some(arr_idx) = obj.to_array_idx() {
+        // For arrays, get length first
+        let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+
+        // Create index strings
+        let keys: Vec<Value> = (0..len)
+            .map(|i| interp.create_runtime_string(i.to_string()))
+            .collect();
+
+        let new_arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(keys);
+        return Ok(Value::array_idx(new_arr_idx));
+    }
+
+    // Return empty array for non-objects
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(Vec::new());
+    Ok(Value::array_idx(arr_idx))
+}
+
+/// Object.values - returns array of object's own property values
+fn native_object_values(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        // Clone values to avoid borrow issues
+        let values: Vec<Value> = interp.objects
+            .get(obj_idx as usize)
+            .map(|obj| obj.properties.iter().map(|(_, v)| *v).collect())
+            .unwrap_or_default();
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(values);
+        return Ok(Value::array_idx(arr_idx));
+    } else if let Some(arr_idx) = obj.to_array_idx() {
+        // For arrays, return a copy of values
+        let arr_copy = interp.arrays.get(arr_idx as usize).cloned().unwrap_or_default();
+        let new_arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(arr_copy);
+        return Ok(Value::array_idx(new_arr_idx));
+    }
+
+    // Return empty array for non-objects
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(Vec::new());
+    Ok(Value::array_idx(arr_idx))
+}
+
+/// Object.entries - returns array of [key, value] pairs
+fn native_object_entries(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        // Clone properties to avoid borrow issues
+        let props: Vec<(String, Value)> = interp.objects
+            .get(obj_idx as usize)
+            .map(|obj| obj.properties.clone())
+            .unwrap_or_default();
+
+        // Create array of [key, value] pairs
+        let mut entries: Vec<Value> = Vec::new();
+
+        for (k, v) in props {
+            let key_val = interp.create_runtime_string(k);
+            // Create inner array [key, value]
+            let pair_idx = interp.arrays.len() as u32;
+            interp.arrays.push(vec![key_val, v]);
+            entries.push(Value::array_idx(pair_idx));
+        }
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(entries);
+        return Ok(Value::array_idx(arr_idx));
+    }
+
+    // Return empty array for non-objects
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(Vec::new());
+    Ok(Value::array_idx(arr_idx))
+}
+
+// ===========================================
+// Array Static Methods
+// ===========================================
+
+/// Array.isArray - check if value is an array
+fn native_array_is_array(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.first().copied().unwrap_or(Value::undefined());
+    Ok(Value::bool(val.is_array()))
 }
 
 impl Default for Interpreter {

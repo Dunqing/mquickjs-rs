@@ -71,9 +71,9 @@
 ### Stage 5: Core Builtins
 **Goal**: Essential JavaScript built-in objects
 
-- [ ] 5.1 Implement `Object` constructor and prototype
+- [x] 5.1 Implement `Object` constructor and prototype (partial: Object.keys, Object.values, Object.entries)
 - [ ] 5.2 Implement `Function` prototype
-- [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length)
+- [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length, Array.isArray)
 - [x] 5.4 Implement `String` constructor and methods (length, charAt, indexOf, slice, substring, toUpperCase, toLowerCase, trim, split)
 - [x] 5.5 Implement `Number` constructor and methods (isInteger, isNaN, isFinite, MAX_VALUE, MIN_VALUE)
 - [x] 5.6 Implement `Boolean` constructor (Boolean/Number/String as functions)
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 267 passing
+**Test Count**: 273 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -366,4 +366,13 @@
 - BUILTIN_STRING constant for String object
 - 10 type coercion tests
 
-**Next Action**: Implement Object/Function prototypes or RegExp
+**Stage 5.1 Object Static Methods**:
+- BUILTIN_OBJECT constant for Object global
+- BUILTIN_ARRAY constant for Array global
+- Object.keys(obj) - returns array of property names
+- Object.values(obj) - returns array of property values
+- Object.entries(obj) - returns array of [key, value] pairs
+- Array.isArray(value) - check if value is an array
+- 6 Object/Array static method tests
+
+**Next Action**: Implement Function prototype or RegExp

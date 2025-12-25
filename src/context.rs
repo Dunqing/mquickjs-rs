@@ -2638,4 +2638,83 @@ mod tests {
         ").unwrap();
         assert!(result.is_string());
     }
+
+    // ========================================
+    // Object Static Method Tests
+    // ========================================
+
+    #[test]
+    fn test_object_keys() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object.keys returns array of property names
+        let result = ctx.eval("
+            function Obj() { this.a = 1; this.b = 2; this.c = 3; }
+            var obj = new Obj();
+            var keys = Object.keys(obj);
+            return keys.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_object_values() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object.values returns array of property values
+        let result = ctx.eval("
+            function Obj() { this.x = 10; this.y = 20; }
+            var obj = new Obj();
+            var vals = Object.values(obj);
+            return vals[0] + vals[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(30));
+    }
+
+    #[test]
+    fn test_object_entries() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object.entries returns array of [key, value] pairs
+        let result = ctx.eval("
+            function Obj() { this.a = 100; }
+            var obj = new Obj();
+            var entries = Object.entries(obj);
+            return entries.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_is_array_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return Array.isArray(arr) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_is_array_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return Array.isArray(obj) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_array_is_array_number() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Array.isArray(42) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
 }
