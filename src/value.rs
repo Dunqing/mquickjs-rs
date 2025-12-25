@@ -79,6 +79,10 @@ pub const ERROR_OBJECT_MARKER: i32 = 1 << 20;
 /// When bit 19 is set, it's a RegExp object index
 pub const REGEXP_OBJECT_MARKER: i32 = 1 << 19;
 
+/// Marker bit for TypedArray objects
+/// When bit 18 is set, it's a TypedArray object index
+pub const TYPED_ARRAY_MARKER: i32 = 1 << 18;
+
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -620,6 +624,34 @@ impl Value {
     pub const fn to_regexp_object_idx(self) -> Option<u32> {
         if self.is_regexp_object() {
             Some((self.0.get_special_value() & !REGEXP_OBJECT_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Create a TypedArray object value
+    #[inline]
+    pub const fn typed_array_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | TYPED_ARRAY_MARKER,
+        ))
+    }
+
+    /// Check if this is a TypedArray object
+    #[inline]
+    pub const fn is_typed_array(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & TYPED_ARRAY_MARKER) != 0
+            && (self.0.get_special_value() & REGEXP_OBJECT_MARKER) == 0
+            && (self.0.get_special_value() & ERROR_OBJECT_MARKER) == 0
+    }
+
+    /// Get TypedArray object index, returns None if not a TypedArray object
+    #[inline]
+    pub const fn to_typed_array_idx(self) -> Option<u32> {
+        if self.is_typed_array() {
+            Some((self.0.get_special_value() & !TYPED_ARRAY_MARKER) as u32)
         } else {
             None
         }

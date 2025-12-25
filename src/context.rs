@@ -3218,6 +3218,86 @@ mod tests {
     }
 
     // ========================================
+    // TypedArray Tests
+    // ========================================
+
+    #[test]
+    fn test_int8_array_create() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int8Array(5);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_uint8_array_set_get() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Uint8Array(3);
+            arr[0] = 10;
+            arr[1] = 20;
+            arr[2] = 30;
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(60));
+    }
+
+    #[test]
+    fn test_int32_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int32Array(2);
+            arr[0] = 100000;
+            arr[1] = 200000;
+            return arr[0] + arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(300000));
+    }
+
+    #[test]
+    fn test_typed_array_byte_length() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Int32Array element = 4 bytes, 3 elements = 12 bytes
+        let result = ctx.eval("
+            var arr = new Int32Array(3);
+            return arr.byteLength;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(12));
+    }
+
+    #[test]
+    fn test_typed_array_from_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var src = [1, 2, 3, 4, 5];
+            var arr = new Int8Array(src);
+            return arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_int8_array_overflow() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Int8 range is -128 to 127, 200 should wrap
+        let result = ctx.eval("
+            var arr = new Int8Array(1);
+            arr[0] = 200;
+            return arr[0];
+        ").unwrap();
+        // 200 as i8 = -56
+        assert_eq!(result.to_i32(), Some(-56));
+    }
+
+    // ========================================
     // Function.prototype Tests
     // ========================================
 

@@ -90,10 +90,10 @@
 - [x] 6.2 Implement `Math` object (partial: abs, floor, ceil, round, sqrt, pow, max, min)
 - [x] 6.3 Implement `JSON` object (stringify, parse)
 - [x] 6.4 Implement `RegExp` object (constructor, test, exec)
-- [ ] 6.5 Implement `TypedArray` objects
+- [x] 6.5 Implement `TypedArray` objects
 - [x] 6.6 Implement `Date.now()`
 
-**Status**: In Progress (Error, Math, JSON, Date, RegExp complete)
+**Status**: Complete
 
 ---
 
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 333 passing
+**Test Count**: 339 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -426,4 +426,17 @@
 - get_regexp_property() for property access
 - 8 RegExp tests
 
-**Next Action**: Implement TypedArray (Stage 6.5) or more String methods
+**Stage 6.5 TypedArray Features**:
+- TypedArrayKind enum: Int8, Uint8, Int16, Uint16, Int32, Uint32
+- TypedArrayObject struct with raw byte storage
+- TYPED_ARRAY_MARKER (bit 18) for value encoding
+- Value::typed_array_object(), is_typed_array(), to_typed_array_idx() methods
+- TypedArray constructors: Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array
+- Element access via GetArrayEl/PutArrayEl with proper type conversion
+- Properties: length, byteLength, BYTES_PER_ELEMENT
+- Create from length: new Int8Array(10)
+- Create from array: new Int8Array([1, 2, 3])
+- Proper overflow handling (Int8 wraps -128 to 127)
+- 6 TypedArray tests
+
+**Next Action**: Stage 8 CLI improvements or Stage 9 optimization
