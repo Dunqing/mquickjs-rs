@@ -44,6 +44,8 @@ pub const BUILTIN_MAP: u32 = 15;
 pub const BUILTIN_SET: u32 = 16;
 /// globalThis object index
 pub const BUILTIN_GLOBAL_THIS: u32 = 17;
+/// Reflect object index
+pub const BUILTIN_REFLECT: u32 = 18;
 
 /// Native function signature
 ///
@@ -2207,6 +2209,7 @@ impl Interpreter {
                         "Map" => Some(Value::builtin_object(BUILTIN_MAP)),
                         "Set" => Some(Value::builtin_object(BUILTIN_SET)),
                         "globalThis" => Some(Value::builtin_object(BUILTIN_GLOBAL_THIS)),
+                        "Reflect" => Some(Value::builtin_object(BUILTIN_REFLECT)),
                         _ => self.get_native_func(name),
                     };
 
@@ -3529,6 +3532,7 @@ impl Interpreter {
                     "hasOwn" => self.get_native_func("Object.hasOwn").unwrap_or(Value::undefined()),
                     "is" => self.get_native_func("Object.is").unwrap_or(Value::undefined()),
                     "getPrototypeOf" => self.get_native_func("Object.getPrototypeOf").unwrap_or(Value::undefined()),
+                    "setPrototypeOf" => self.get_native_func("Object.setPrototypeOf").unwrap_or(Value::undefined()),
                     "getOwnPropertyDescriptor" => self.get_native_func("Object.getOwnPropertyDescriptor").unwrap_or(Value::undefined()),
                     "defineProperty" => self.get_native_func("Object.defineProperty").unwrap_or(Value::undefined()),
                     "preventExtensions" => self.get_native_func("Object.preventExtensions").unwrap_or(Value::undefined()),
@@ -3582,6 +3586,18 @@ impl Interpreter {
                     "decodeURIComponent" => self.get_native_func("decodeURIComponent").unwrap_or(Value::undefined()),
                     "encodeURI" => self.get_native_func("encodeURI").unwrap_or(Value::undefined()),
                     "decodeURI" => self.get_native_func("decodeURI").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
+            BUILTIN_REFLECT => {
+                // Reflect object methods
+                match prop_name {
+                    "get" => self.get_native_func("Reflect.get").unwrap_or(Value::undefined()),
+                    "set" => self.get_native_func("Reflect.set").unwrap_or(Value::undefined()),
+                    "has" => self.get_native_func("Reflect.has").unwrap_or(Value::undefined()),
+                    "deleteProperty" => self.get_native_func("Reflect.deleteProperty").unwrap_or(Value::undefined()),
+                    "ownKeys" => self.get_native_func("Reflect.ownKeys").unwrap_or(Value::undefined()),
+                    "apply" => self.get_native_func("Reflect.apply").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3850,6 +3866,14 @@ impl Interpreter {
         self.register_native("Set.prototype.size", native_set_size, 0);
         self.register_native("Set.prototype.forEach", native_set_foreach, 1);
 
+        // Reflect methods
+        self.register_native("Reflect.get", native_reflect_get, 2);
+        self.register_native("Reflect.set", native_reflect_set, 3);
+        self.register_native("Reflect.has", native_reflect_has, 2);
+        self.register_native("Reflect.deleteProperty", native_reflect_delete_property, 2);
+        self.register_native("Reflect.ownKeys", native_reflect_own_keys, 1);
+        self.register_native("Reflect.apply", native_reflect_apply, 3);
+
         // Object static methods
         self.register_native("Object.keys", native_object_keys, 1);
         self.register_native("Object.values", native_object_values, 1);
@@ -3868,6 +3892,7 @@ impl Interpreter {
         self.register_native("Object.prototype.valueOf", native_object_prototype_value_of, 0);
         self.register_native("Object.is", native_object_is, 2);
         self.register_native("Object.getPrototypeOf", native_object_get_prototype_of, 1);
+        self.register_native("Object.setPrototypeOf", native_object_set_prototype_of, 2);
         self.register_native("Object.getOwnPropertyDescriptor", native_object_get_own_property_descriptor, 2);
         self.register_native("Object.defineProperty", native_object_define_property, 3);
         self.register_native("Object.preventExtensions", native_object_prevent_extensions, 1);
@@ -7508,6 +7533,26 @@ fn native_object_get_prototype_of(interp: &mut Interpreter, _this: Value, args: 
     }
 }
 
+/// Object.setPrototypeOf - set the prototype of an object
+fn native_object_set_prototype_of(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+    let proto = args.get(1).copied().unwrap_or(Value::null());
+
+    // Check that obj is an object
+    if obj.to_object_idx().is_none() && obj.to_array_idx().is_none() {
+        return Err("Object.setPrototypeOf called on non-object".to_string());
+    }
+
+    // Check that proto is null or an object
+    if !proto.is_null() && proto.to_object_idx().is_none() && proto.to_array_idx().is_none() {
+        return Err("Object prototype may only be an Object or null".to_string());
+    }
+
+    // In our simplified implementation, we don't have true prototype chains
+    // Just return the object as per spec (successful setPrototypeOf returns the object)
+    Ok(obj)
+}
+
 /// Object.getOwnPropertyDescriptor - get property descriptor
 fn native_object_get_own_property_descriptor(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let obj = args.first().copied().unwrap_or(Value::undefined());
@@ -7674,6 +7719,210 @@ fn native_object_is_extensible(interp: &mut Interpreter, _this: Value, args: &[V
     }
     // Non-objects are not extensible
     Ok(Value::bool(false))
+}
+
+// ===========================================
+// Reflect Object Methods
+// ===========================================
+
+/// Reflect.get - get property value from object
+fn native_reflect_get(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::undefined());
+    };
+
+    if let Some(obj_idx) = target.to_object_idx() {
+        Ok(interp.object_get_property(obj_idx, &prop_name))
+    } else if let Some(arr_idx) = target.to_array_idx() {
+        if prop_name == "length" {
+            let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+            Ok(Value::int(len as i32))
+        } else if let Ok(idx) = prop_name.parse::<usize>() {
+            let val = interp.arrays.get(arr_idx as usize)
+                .and_then(|arr| arr.get(idx).copied())
+                .unwrap_or(Value::undefined());
+            Ok(val)
+        } else {
+            Ok(Value::undefined())
+        }
+    } else {
+        Ok(Value::undefined())
+    }
+}
+
+/// Reflect.set - set property value on object
+fn native_reflect_set(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+    let value = args.get(2).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    if let Some(obj_idx) = target.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get_mut(obj_idx as usize) {
+            if obj_data.frozen {
+                return Ok(Value::bool(false));
+            }
+            // Update or add property
+            let mut found = false;
+            for (key, val) in &mut obj_data.properties {
+                if key == &prop_name {
+                    *val = value;
+                    found = true;
+                    break;
+                }
+            }
+            if !found && !obj_data.sealed {
+                obj_data.properties.push((prop_name, value));
+            }
+            return Ok(Value::bool(true));
+        }
+    } else if let Some(arr_idx) = target.to_array_idx() {
+        if let Ok(idx) = prop_name.parse::<usize>() {
+            if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+                while arr.len() <= idx {
+                    arr.push(Value::undefined());
+                }
+                arr[idx] = value;
+                return Ok(Value::bool(true));
+            }
+        }
+    }
+    Ok(Value::bool(false))
+}
+
+/// Reflect.has - check if object has property
+fn native_reflect_has(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    if let Some(obj_idx) = target.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            let has = obj_data.properties.iter().any(|(k, _)| k == &prop_name);
+            return Ok(Value::bool(has));
+        }
+    } else if let Some(arr_idx) = target.to_array_idx() {
+        if prop_name == "length" {
+            return Ok(Value::bool(true));
+        }
+        if let Ok(idx) = prop_name.parse::<usize>() {
+            let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+            return Ok(Value::bool(idx < len));
+        }
+    }
+    Ok(Value::bool(false))
+}
+
+/// Reflect.deleteProperty - delete property from object
+fn native_reflect_delete_property(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    if let Some(obj_idx) = target.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get_mut(obj_idx as usize) {
+            if obj_data.frozen || obj_data.sealed {
+                return Ok(Value::bool(false));
+            }
+            let initial_len = obj_data.properties.len();
+            obj_data.properties.retain(|(k, _)| k != &prop_name);
+            return Ok(Value::bool(obj_data.properties.len() < initial_len));
+        }
+    }
+    Ok(Value::bool(false))
+}
+
+/// Reflect.ownKeys - get all own property keys
+fn native_reflect_own_keys(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+
+    // Collect key names first to avoid borrow conflicts
+    let key_names: Vec<String> = if let Some(obj_idx) = target.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            obj_data.properties.iter().map(|(k, _)| k.clone()).collect()
+        } else {
+            Vec::new()
+        }
+    } else if let Some(arr_idx) = target.to_array_idx() {
+        if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+            let mut names: Vec<String> = (0..arr.len()).map(|i| i.to_string()).collect();
+            names.push("length".to_string());
+            names
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    // Now create runtime strings
+    let keys: Vec<Value> = key_names.into_iter()
+        .map(|name| interp.create_runtime_string(name))
+        .collect();
+
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(keys);
+    Ok(Value::array_idx(arr_idx))
+}
+
+/// Reflect.apply - call a function with given this and arguments
+fn native_reflect_apply(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+    let this_arg = args.get(1).copied().unwrap_or(Value::undefined());
+    let args_array = args.get(2).copied().unwrap_or(Value::undefined());
+
+    // Get arguments from array
+    let call_args: Vec<Value> = if let Some(arr_idx) = args_array.to_array_idx() {
+        interp.arrays.get(arr_idx as usize)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Call the function
+    interp.call_value(target, this_arg, &call_args)
+        .map_err(|e| e.to_string())
 }
 
 // ===========================================

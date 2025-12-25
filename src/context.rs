@@ -4742,4 +4742,132 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
+
+    // ===========================================
+    // Stage 6.16: Reflect Object, Object.setPrototypeOf
+    // ===========================================
+
+    #[test]
+    fn test_reflect_get() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 42; this.y = 100; }
+            var obj = new Obj();
+            return Reflect.get(obj, 'x');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_reflect_set() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            Reflect.set(obj, 'y', 99);
+            return obj.y;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(99));
+    }
+
+    #[test]
+    fn test_reflect_has() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.a = 1; }
+            var obj = new Obj();
+            return Reflect.has(obj, 'a');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_reflect_has_missing() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.a = 1; }
+            var obj = new Obj();
+            return Reflect.has(obj, 'b');
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_reflect_delete_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; this.y = 2; }
+            var obj = new Obj();
+            Reflect.deleteProperty(obj, 'x');
+            return obj.x === undefined;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_reflect_own_keys() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.a = 1; this.b = 2; }
+            var obj = new Obj();
+            var keys = Reflect.ownKeys(obj);
+            return keys.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_reflect_own_keys_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [10, 20, 30];
+            var keys = Reflect.ownKeys(arr);
+            return keys.length;
+        ").unwrap();
+        // 3 indices + "length"
+        assert_eq!(result.to_i32(), Some(4));
+    }
+
+    #[test]
+    fn test_reflect_apply() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function add(a, b) { return a + b; }
+            return Reflect.apply(add, null, [5, 7]);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(12));
+    }
+
+    #[test]
+    fn test_object_set_prototype_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            var result = Object.setPrototypeOf(obj, null);
+            return result.x;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_object_set_prototype_of_returns_object() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var result = Object.setPrototypeOf(arr, null);
+            return result.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
 }
