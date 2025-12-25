@@ -3005,6 +3005,11 @@ impl Interpreter {
             "includes" => self.get_native_func("String.prototype.includes").unwrap_or(Value::undefined()),
             "match" => self.get_native_func("String.prototype.match").unwrap_or(Value::undefined()),
             "search" => self.get_native_func("String.prototype.search").unwrap_or(Value::undefined()),
+            // mquickjs-specific String methods
+            "codePointAt" => self.get_native_func("String.prototype.codePointAt").unwrap_or(Value::undefined()),
+            "trimStart" => self.get_native_func("String.prototype.trimStart").unwrap_or(Value::undefined()),
+            "trimEnd" => self.get_native_func("String.prototype.trimEnd").unwrap_or(Value::undefined()),
+            "replaceAll" => self.get_native_func("String.prototype.replaceAll").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3076,6 +3081,13 @@ impl Interpreter {
                     "round" => self.get_native_func("Math.round").unwrap_or(Value::undefined()),
                     "sqrt" => self.get_native_func("Math.sqrt").unwrap_or(Value::undefined()),
                     "pow" => self.get_native_func("Math.pow").unwrap_or(Value::undefined()),
+                    // mquickjs-specific Math functions
+                    "imul" => self.get_native_func("Math.imul").unwrap_or(Value::undefined()),
+                    "clz32" => self.get_native_func("Math.clz32").unwrap_or(Value::undefined()),
+                    "fround" => self.get_native_func("Math.fround").unwrap_or(Value::undefined()),
+                    "trunc" => self.get_native_func("Math.trunc").unwrap_or(Value::undefined()),
+                    "log2" => self.get_native_func("Math.log2").unwrap_or(Value::undefined()),
+                    "log10" => self.get_native_func("Math.log10").unwrap_or(Value::undefined()),
                     "PI" => Value::int(3), // TODO: proper float value 3.14159...
                     "E" => Value::int(2),  // TODO: proper float value 2.71828...
                     _ => Value::undefined(),
@@ -3286,6 +3298,13 @@ impl Interpreter {
         self.register_native("Math.pow", native_math_pow, 2);
         self.register_native("Math.max", native_math_max, 0);
         self.register_native("Math.min", native_math_min, 0);
+        // mquickjs-specific Math functions
+        self.register_native("Math.imul", native_math_imul, 2);
+        self.register_native("Math.clz32", native_math_clz32, 1);
+        self.register_native("Math.fround", native_math_fround, 1);
+        self.register_native("Math.trunc", native_math_trunc, 1);
+        self.register_native("Math.log2", native_math_log2, 1);
+        self.register_native("Math.log10", native_math_log10, 1);
 
         // String methods
         self.register_native("String.prototype.charAt", native_string_char_at, 1);
@@ -3306,6 +3325,11 @@ impl Interpreter {
         self.register_native("String.prototype.includes", native_string_includes, 1);
         self.register_native("String.prototype.match", native_string_match, 1);
         self.register_native("String.prototype.search", native_string_search, 1);
+        // mquickjs-specific String methods
+        self.register_native("String.prototype.codePointAt", native_string_code_point_at, 1);
+        self.register_native("String.prototype.trimStart", native_string_trim_start, 0);
+        self.register_native("String.prototype.trimEnd", native_string_trim_end, 0);
+        self.register_native("String.prototype.replaceAll", native_string_replace_all, 2);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -4076,6 +4100,66 @@ fn native_math_pow(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> R
     }
 }
 
+/// Math.imul - 32-bit integer multiplication
+fn native_math_imul(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let a = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let b = args.get(1).and_then(|v| v.to_i32()).unwrap_or(0);
+    // Perform 32-bit multiplication with wrapping
+    let result = (a as i64 * b as i64) as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.clz32 - count leading zeros in 32-bit integer
+fn native_math_clz32(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let result = (n as u32).leading_zeros() as i32;
+    Ok(Value::int(result))
+}
+
+/// Math.fround - round to nearest 32-bit float (integer approximation)
+fn native_math_fround(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // For integer-only engine, just return the value
+    Ok(Value::int(n))
+}
+
+/// Math.trunc - truncate to integer (remove fractional part)
+fn native_math_trunc(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // For integer-only engine, value is already truncated
+    Ok(Value::int(n))
+}
+
+/// Math.log2 - base-2 logarithm (integer approximation)
+fn native_math_log2(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n <= 0 {
+        // Return a special value for non-positive
+        Ok(Value::int(-1))
+    } else {
+        // Count bits - log2(n) = position of highest set bit
+        let result = 31 - (n as u32).leading_zeros() as i32;
+        Ok(Value::int(result))
+    }
+}
+
+/// Math.log10 - base-10 logarithm (integer approximation)
+fn native_math_log10(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n <= 0 {
+        Ok(Value::int(-1))
+    } else {
+        // Approximate log10 by counting decimal digits - 1
+        let mut temp = n;
+        let mut digits = 0;
+        while temp >= 10 {
+            temp /= 10;
+            digits += 1;
+        }
+        Ok(Value::int(digits))
+    }
+}
+
 // =============================================================================
 // String.prototype methods
 // =============================================================================
@@ -4684,6 +4768,77 @@ fn native_string_search(interp: &mut Interpreter, this: Value, args: &[Value]) -
     } else {
         Ok(Value::int(-1))
     }
+}
+
+/// String.prototype.codePointAt - get Unicode code point at position
+fn native_string_code_point_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "codePointAt called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let index = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as usize;
+
+    // Get code point at index
+    if let Some(ch) = s.chars().nth(index) {
+        Ok(Value::int(ch as i32))
+    } else {
+        Ok(Value::undefined())
+    }
+}
+
+/// String.prototype.trimStart - remove leading whitespace
+fn native_string_trim_start(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "trimStart called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let trimmed = s.trim_start().to_string();
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(trimmed);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.trimEnd - remove trailing whitespace
+fn native_string_trim_end(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "trimEnd called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let trimmed = s.trim_end().to_string();
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(trimmed);
+    Ok(Value::string(new_idx))
+}
+
+/// String.prototype.replaceAll - replace all occurrences
+fn native_string_replace_all(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "replaceAll called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let search = args.get(0)
+        .and_then(|v| v.to_string_idx())
+        .and_then(|idx| interp.get_string_by_idx(idx).map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    let replacement = args.get(1)
+        .and_then(|v| v.to_string_idx())
+        .and_then(|idx| interp.get_string_by_idx(idx).map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    let result = s.replace(&search, &replacement);
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
 }
 
 // =============================================================================

@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 319 passing
+**Test Count**: 329 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -275,7 +275,8 @@
 - GetGlobal handler returns Math builtin object for "Math" name
 - GetField handler checks for builtin objects and dispatches to get_builtin_property()
 - Math methods implemented: abs, floor, ceil, round, sqrt, pow, max, min
-- 6 new Math object tests
+- mquickjs-specific Math methods: imul, clz32, fround, trunc, log2, log10
+- 12 Math object tests
 
 **Stage 5.3 Array Method Features**:
 - GetField2 opcode keeps object on stack for method calls
@@ -315,8 +316,9 @@
 - String.prototype.includes(search, position) - check contains
 - String.prototype.match(regexp) - match against RegExp, returns array or null
 - String.prototype.search(regexp) - search for match, returns index or -1
+- mquickjs-specific String methods: codePointAt, trimStart, trimEnd, replaceAll
 - Note: Methods work on runtime strings (from concatenation); compile-time literal support pending
-- 24 String method tests
+- 28 String method tests
 
 **Stage 5.5 Number Static Methods**:
 - BUILTIN_NUMBER constant for Number object

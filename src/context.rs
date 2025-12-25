@@ -1785,6 +1785,79 @@ mod tests {
         assert_eq!(result.to_i32(), Some(10));
     }
 
+    // mquickjs-specific Math functions
+    #[test]
+    fn test_math_imul() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Basic integer multiplication
+        let result = ctx.eval("return Math.imul(3, 4);").unwrap();
+        assert_eq!(result.to_i32(), Some(12));
+
+        // With negative numbers
+        let result = ctx.eval("return Math.imul(-5, 3);").unwrap();
+        assert_eq!(result.to_i32(), Some(-15));
+    }
+
+    #[test]
+    fn test_math_clz32() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Count leading zeros
+        let result = ctx.eval("return Math.clz32(1);").unwrap();
+        assert_eq!(result.to_i32(), Some(31));
+
+        let result = ctx.eval("return Math.clz32(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(32));
+    }
+
+    #[test]
+    fn test_math_trunc() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Trunc on integer is identity
+        let result = ctx.eval("return Math.trunc(42);").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+
+        let result = ctx.eval("return Math.trunc(-5);").unwrap();
+        assert_eq!(result.to_i32(), Some(-5));
+    }
+
+    #[test]
+    fn test_math_log2() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // log2(8) = 3
+        let result = ctx.eval("return Math.log2(8);").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+
+        // log2(1) = 0
+        let result = ctx.eval("return Math.log2(1);").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_math_log10() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // log10(100) = 2
+        let result = ctx.eval("return Math.log10(100);").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+
+        // log10(1000) = 3
+        let result = ctx.eval("return Math.log10(1000);").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_math_fround() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // fround on integer is identity (for our int-only engine)
+        let result = ctx.eval("return Math.fround(42);").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
     // =========================================================================
     // Array.prototype method tests
     // =========================================================================
@@ -2853,6 +2926,64 @@ mod tests {
             return str.search(re);
         ").unwrap();
         assert_eq!(result.to_i32(), Some(-1));
+    }
+
+    // mquickjs-specific String methods
+    #[test]
+    fn test_string_code_point_at() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Get code point of 'A' (65)
+        let result = ctx.eval("
+            var s = \"ABC\" + \"\";
+            return s.codePointAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(65));
+
+        // Get code point of 'B' (66)
+        let result = ctx.eval("
+            var s = \"ABC\" + \"\";
+            return s.codePointAt(1);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(66));
+    }
+
+    #[test]
+    fn test_string_trim_start() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = \"  hello\" + \"\";
+            var t = s.trimStart();
+            return t.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5)); // "hello" has length 5
+    }
+
+    #[test]
+    fn test_string_trim_end() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = \"hello  \" + \"\";
+            var t = s.trimEnd();
+            return t.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5)); // "hello" has length 5
+    }
+
+    #[test]
+    fn test_string_replace_all() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = \"aXbXc\" + \"\";
+            var x = \"X\" + \"\";
+            var y = \"Y\" + \"\";
+            var r = s.replaceAll(x, y);
+            return r.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5)); // "aYbYc" has length 5
     }
 
     // ========================================
