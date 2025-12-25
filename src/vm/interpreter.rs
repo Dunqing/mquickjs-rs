@@ -67,6 +67,10 @@ pub struct ObjectInstance {
     pub constructor: Option<Value>,
     /// Object properties as key-value pairs
     pub properties: Vec<(String, Value)>,
+    /// Whether the object is frozen (non-extensible, properties non-writable/non-configurable)
+    pub frozen: bool,
+    /// Whether the object is sealed (non-extensible, properties non-configurable)
+    pub sealed: bool,
 }
 
 impl ObjectInstance {
@@ -75,6 +79,8 @@ impl ObjectInstance {
         ObjectInstance {
             constructor: None,
             properties: Vec::new(),
+            frozen: false,
+            sealed: false,
         }
     }
 
@@ -83,6 +89,8 @@ impl ObjectInstance {
         ObjectInstance {
             constructor: Some(constructor),
             properties: Vec::new(),
+            frozen: false,
+            sealed: false,
         }
     }
 }
@@ -3218,6 +3226,9 @@ impl Interpreter {
             "at" => self.get_native_func("Array.prototype.at").unwrap_or(Value::undefined()),
             "findLast" => self.get_native_func("Array.prototype.findLast").unwrap_or(Value::undefined()),
             "findLastIndex" => self.get_native_func("Array.prototype.findLastIndex").unwrap_or(Value::undefined()),
+            "toSorted" => self.get_native_func("Array.prototype.toSorted").unwrap_or(Value::undefined()),
+            "toReversed" => self.get_native_func("Array.prototype.toReversed").unwrap_or(Value::undefined()),
+            "with" => self.get_native_func("Array.prototype.with").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3258,6 +3269,7 @@ impl Interpreter {
             "replaceAll" => self.get_native_func("String.prototype.replaceAll").unwrap_or(Value::undefined()),
             "at" => self.get_native_func("String.prototype.at").unwrap_or(Value::undefined()),
             "charCodeAt" => self.get_native_func("String.prototype.charCodeAt").unwrap_or(Value::undefined()),
+            "codePointAt" => self.get_native_func("String.prototype.codePointAt").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3442,6 +3454,11 @@ impl Interpreter {
                     "entries" => self.get_native_func("Object.entries").unwrap_or(Value::undefined()),
                     "assign" => self.get_native_func("Object.assign").unwrap_or(Value::undefined()),
                     "create" => self.get_native_func("Object.create").unwrap_or(Value::undefined()),
+                    "freeze" => self.get_native_func("Object.freeze").unwrap_or(Value::undefined()),
+                    "seal" => self.get_native_func("Object.seal").unwrap_or(Value::undefined()),
+                    "isFrozen" => self.get_native_func("Object.isFrozen").unwrap_or(Value::undefined()),
+                    "isSealed" => self.get_native_func("Object.isSealed").unwrap_or(Value::undefined()),
+                    "getOwnPropertyNames" => self.get_native_func("Object.getOwnPropertyNames").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3458,6 +3475,7 @@ impl Interpreter {
                 // String static methods
                 match prop_name {
                     "fromCharCode" => self.get_native_func("String.fromCharCode").unwrap_or(Value::undefined()),
+                    "fromCodePoint" => self.get_native_func("String.fromCodePoint").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3601,6 +3619,9 @@ impl Interpreter {
         self.register_native("Array.prototype.at", native_array_at, 1);
         self.register_native("Array.prototype.findLast", native_array_find_last, 1);
         self.register_native("Array.prototype.findLastIndex", native_array_find_last_index, 1);
+        self.register_native("Array.prototype.toSorted", native_array_to_sorted, 0);
+        self.register_native("Array.prototype.toReversed", native_array_to_reversed, 0);
+        self.register_native("Array.prototype.with", native_array_with, 2);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
@@ -3654,7 +3675,9 @@ impl Interpreter {
         self.register_native("String.prototype.replaceAll", native_string_replace_all, 2);
         self.register_native("String.prototype.at", native_string_at, 1);
         self.register_native("String.prototype.charCodeAt", native_string_char_code_at, 1);
+        self.register_native("String.prototype.codePointAt", native_string_code_point_at, 1);
         self.register_native("String.fromCharCode", native_string_from_char_code, 0);
+        self.register_native("String.fromCodePoint", native_string_from_code_point, 0);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -3700,6 +3723,11 @@ impl Interpreter {
         self.register_native("Object.entries", native_object_entries, 1);
         self.register_native("Object.assign", native_object_assign, 2);
         self.register_native("Object.create", native_object_create, 1);
+        self.register_native("Object.freeze", native_object_freeze, 1);
+        self.register_native("Object.seal", native_object_seal, 1);
+        self.register_native("Object.isFrozen", native_object_is_frozen, 1);
+        self.register_native("Object.isSealed", native_object_is_sealed, 1);
+        self.register_native("Object.getOwnPropertyNames", native_object_get_own_property_names, 1);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -4597,6 +4625,82 @@ fn native_array_find_last_index(interp: &mut Interpreter, this: Value, args: &[V
     }
 
     Ok(Value::int(-1))
+}
+
+/// Array.prototype.toSorted - returns a new sorted array (ES2023, non-mutating)
+fn native_array_to_sorted(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "toSorted called on non-array".to_string())?;
+
+    // Clone the array
+    let mut arr_copy = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    // Sort the copy
+    arr_copy.sort_by(|a, b| {
+        let a_val = a.to_i32().unwrap_or(0);
+        let b_val = b.to_i32().unwrap_or(0);
+        a_val.cmp(&b_val)
+    });
+
+    // Create new array
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(arr_copy);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.toReversed - returns a new reversed array (ES2023, non-mutating)
+fn native_array_to_reversed(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "toReversed called on non-array".to_string())?;
+
+    // Clone and reverse the array
+    let mut arr_copy = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    arr_copy.reverse();
+
+    // Create new array
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(arr_copy);
+    Ok(Value::array_idx(new_arr_idx))
+}
+
+/// Array.prototype.with - returns a new array with element at index replaced (ES2023)
+fn native_array_with(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "with called on non-array".to_string())?;
+
+    let index = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let value = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Clone the array
+    let mut arr_copy = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    let len = arr_copy.len() as i32;
+
+    // Handle negative indices
+    let actual_index = if index < 0 {
+        len + index
+    } else {
+        index
+    };
+
+    if actual_index < 0 || actual_index >= len {
+        return Err("Invalid index".to_string());
+    }
+
+    // Set the value
+    arr_copy[actual_index as usize] = value;
+
+    // Create new array
+    let new_arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(arr_copy);
+    Ok(Value::array_idx(new_arr_idx))
 }
 
 /// parseInt - parse string to integer
@@ -5693,6 +5797,48 @@ fn native_string_from_char_code(interp: &mut Interpreter, _this: Value, args: &[
     Ok(Value::string(new_str_idx))
 }
 
+/// String.prototype.codePointAt - get unicode code point at position
+fn native_string_code_point_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "codePointAt called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let index = args.first().and_then(|v| v.to_i32()).unwrap_or(0) as usize;
+
+    // Get the code point at the given index
+    if let Some(c) = s.chars().nth(index) {
+        Ok(Value::int(c as i32))
+    } else {
+        Ok(Value::undefined())
+    }
+}
+
+/// String.fromCodePoint - create string from code points
+fn native_string_from_code_point(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let mut result = String::new();
+
+    for arg in args {
+        if let Some(code) = arg.to_i32() {
+            if code >= 0 && code <= 0x10FFFF {
+                if let Some(c) = char::from_u32(code as u32) {
+                    result.push(c);
+                } else {
+                    return Err("Invalid code point".to_string());
+                }
+            } else {
+                return Err("Invalid code point".to_string());
+            }
+        }
+    }
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
 // =============================================================================
 // Number static methods
 // =============================================================================
@@ -6154,6 +6300,8 @@ impl<'a> JsonParser<'a> {
             let obj = ObjectInstance {
                 constructor: None,
                 properties: props,
+                frozen: false,
+                sealed: false,
             };
             interp.objects.push(obj);
             return Ok(Value::object_idx(obj_idx));
@@ -6217,6 +6365,8 @@ impl<'a> JsonParser<'a> {
         let obj = ObjectInstance {
             constructor: None,
             properties: props,
+            frozen: false,
+            sealed: false,
         };
         interp.objects.push(obj);
         Ok(Value::object_idx(obj_idx))
@@ -6317,6 +6467,8 @@ fn native_regexp_exec(interp: &mut Interpreter, this: Value, args: &[Value]) -> 
             properties: vec![
                 ("index".to_string(), Value::int(m.start() as i32)),
             ],
+            frozen: false,
+            sealed: false,
         });
 
         // For now, just return the array (input property would require more work)
@@ -6525,6 +6677,104 @@ fn native_object_create(interp: &mut Interpreter, _this: Value, args: &[Value]) 
     let obj_idx = interp.objects.len() as u32;
     interp.objects.push(obj);
     Ok(Value::object_idx(obj_idx))
+}
+
+/// Object.freeze - freezes an object (makes it immutable)
+fn native_object_freeze(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_ref) = interp.objects.get_mut(obj_idx as usize) {
+            obj_ref.frozen = true;
+            obj_ref.sealed = true; // Frozen implies sealed
+        }
+        return Ok(obj);
+    }
+
+    // Return non-objects unchanged
+    Ok(obj)
+}
+
+/// Object.seal - seals an object (prevents adding/removing properties)
+fn native_object_seal(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_ref) = interp.objects.get_mut(obj_idx as usize) {
+            obj_ref.sealed = true;
+        }
+        return Ok(obj);
+    }
+
+    // Return non-objects unchanged
+    Ok(obj)
+}
+
+/// Object.isFrozen - check if object is frozen
+fn native_object_is_frozen(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_ref) = interp.objects.get(obj_idx as usize) {
+            return Ok(Value::bool(obj_ref.frozen));
+        }
+    }
+
+    // Non-objects are considered frozen
+    Ok(Value::bool(true))
+}
+
+/// Object.isSealed - check if object is sealed
+fn native_object_is_sealed(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_ref) = interp.objects.get(obj_idx as usize) {
+            return Ok(Value::bool(obj_ref.sealed));
+        }
+    }
+
+    // Non-objects are considered sealed
+    Ok(Value::bool(true))
+}
+
+/// Object.getOwnPropertyNames - returns array of all property names (including non-enumerable)
+fn native_object_get_own_property_names(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        // Clone property names to avoid borrow issues
+        let key_strings: Vec<String> = interp.objects
+            .get(obj_idx as usize)
+            .map(|obj| obj.properties.iter().map(|(k, _)| k.clone()).collect())
+            .unwrap_or_default();
+
+        // Create string values
+        let keys: Vec<Value> = key_strings.into_iter()
+            .map(|k| interp.create_runtime_string(k))
+            .collect();
+
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(keys);
+        return Ok(Value::array_idx(arr_idx));
+    } else if let Some(arr_idx) = obj.to_array_idx() {
+        // For arrays, include 'length' as a property name
+        let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+
+        let mut keys: Vec<Value> = (0..len)
+            .map(|i| interp.create_runtime_string(i.to_string()))
+            .collect();
+        keys.push(interp.create_runtime_string("length".to_string()));
+
+        let new_arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(keys);
+        return Ok(Value::array_idx(new_arr_idx));
+    }
+
+    // Return empty array for non-objects
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(Vec::new());
+    Ok(Value::array_idx(arr_idx))
 }
 
 // ===========================================

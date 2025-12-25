@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 371 passing
+**Test Count**: 383 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -489,6 +489,23 @@
   - Number.prototype.toFixed(digits) - format with fixed decimal places
   - Number.prototype.toString(radix?) - convert to string with optional base
 - get_number_property() for Number.prototype method dispatch
+- 12 new tests
+
+**Stage 6.10 Object Utility Methods, ES2023 Array Methods, String Methods**:
+- Object utility methods:
+  - Object.freeze(obj) - freezes an object (makes immutable)
+  - Object.seal(obj) - seals an object (prevents adding/removing properties)
+  - Object.isFrozen(obj) - check if object is frozen
+  - Object.isSealed(obj) - check if object is sealed
+  - Object.getOwnPropertyNames(obj) - returns array of all property names
+- ObjectInstance struct extended with frozen/sealed flags
+- ES2023 non-mutating Array methods:
+  - Array.prototype.toSorted() - returns a new sorted array
+  - Array.prototype.toReversed() - returns a new reversed array
+  - Array.prototype.with(index, value) - returns new array with element replaced
+- String methods:
+  - String.prototype.codePointAt(index) - get unicode code point at position
+  - String.fromCodePoint(...codes) - create string from code points
 - 12 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

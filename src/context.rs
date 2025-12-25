@@ -4040,4 +4040,156 @@ mod tests {
         ").unwrap();
         assert!(ctx.value_to_string(&result).unwrap().contains("42"));
     }
+
+    // =========================================================================
+    // Stage 6.10 - Object utility methods, ES2023 Array methods, String methods
+    // =========================================================================
+
+    #[test]
+    fn test_object_freeze() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            Object.freeze(obj);
+            return Object.isFrozen(obj);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_seal() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            Object.seal(obj);
+            return Object.isSealed(obj);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_is_frozen_unfrozen() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return Object.isFrozen(obj);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_object_get_own_property_names() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.a = 1; this.b = 2; }
+            var obj = new Obj();
+            var names = Object.getOwnPropertyNames(obj);
+            return names.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_array_to_sorted() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [3, 1, 2];
+            var sorted = arr.toSorted();
+            return sorted[0] + sorted[1] * 10 + sorted[2] * 100;
+        ").unwrap();
+        // [1, 2, 3] -> 1 + 20 + 300 = 321
+        assert_eq!(result.to_i32(), Some(321));
+    }
+
+    #[test]
+    fn test_array_to_sorted_original_unchanged() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [3, 1, 2];
+            var sorted = arr.toSorted();
+            return arr[0];
+        ").unwrap();
+        // Original array unchanged
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_to_reversed() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var reversed = arr.toReversed();
+            return reversed[0] + reversed[1] * 10 + reversed[2] * 100;
+        ").unwrap();
+        // [3, 2, 1] -> 3 + 20 + 100 = 123
+        assert_eq!(result.to_i32(), Some(123));
+    }
+
+    #[test]
+    fn test_array_to_reversed_original_unchanged() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var reversed = arr.toReversed();
+            return arr[0];
+        ").unwrap();
+        // Original array unchanged
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_with() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var newArr = arr.with(1, 5);
+            return newArr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_array_with_negative_index() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var newArr = arr.with(-1, 9);
+            return newArr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(9));
+    }
+
+    #[test]
+    fn test_string_code_point_at() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'ABC';
+            return s.codePointAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(65)); // 'A' = 65
+    }
+
+    #[test]
+    fn test_string_from_code_point() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return String.fromCodePoint(65, 66, 67);
+        ").unwrap();
+        assert!(ctx.value_to_string(&result).unwrap().contains("ABC"));
+    }
 }
