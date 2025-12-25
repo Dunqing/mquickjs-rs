@@ -73,7 +73,7 @@
 
 - [x] 5.1 Implement `Object` constructor and prototype (partial: Object.keys, Object.values, Object.entries)
 - [x] 5.2 Implement `Function` prototype (call, apply, bind)
-- [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length, Array.isArray)
+- [x] 5.3 Implement `Array` constructor and methods (push, pop, shift, unshift, indexOf, join, reverse, slice, length, Array.isArray, map, filter, forEach, reduce, find, findIndex, some, every, includes)
 - [x] 5.4 Implement `String` constructor and methods (length, charAt, indexOf, slice, substring, toUpperCase, toLowerCase, trim, split)
 - [x] 5.5 Implement `Number` constructor and methods (isInteger, isNaN, isFinite, MAX_VALUE, MIN_VALUE)
 - [x] 5.6 Implement `Boolean` constructor (Boolean/Number/String as functions)
@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 278 passing
+**Test Count**: 290 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -384,4 +384,16 @@
 - get_function_property() to dispatch prototype method lookups
 - 5 Function.prototype tests
 
-**Next Action**: Implement RegExp or more Array methods
+**Stage 5.3 Array Higher-Order Methods**:
+- Array.prototype.map(callback) - create new array with callback applied
+- Array.prototype.filter(callback) - filter elements by predicate
+- Array.prototype.forEach(callback) - call callback for each element
+- Array.prototype.reduce(callback, initial) - reduce to single value
+- Array.prototype.find(callback) - find first matching element
+- Array.prototype.findIndex(callback) - find index of first match
+- Array.prototype.some(callback) - check if any element matches
+- Array.prototype.every(callback) - check if all elements match
+- Array.prototype.includes(value) - check if array contains value
+- 12 Array higher-order function tests
+
+**Next Action**: Implement RegExp or more String methods

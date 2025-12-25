@@ -2791,4 +2791,157 @@ mod tests {
         // bind returns an object (our implementation stores bound function data in an object)
         assert!(result.is_string());
     }
+
+    // ========================================
+    // Array Higher-Order Function Tests
+    // ========================================
+
+    #[test]
+    fn test_array_map() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            function double(x) { return x * 2; }
+            var mapped = arr.map(double);
+            return mapped[0] + mapped[1] + mapped[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(12)); // 2 + 4 + 6
+    }
+
+    #[test]
+    fn test_array_filter() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            function isEven(x) { return x % 2 == 0; }
+            var filtered = arr.filter(isEven);
+            return filtered.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2)); // [2, 4]
+    }
+
+    #[test]
+    fn test_array_foreach() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // forEach just calls the callback, returns undefined
+        // Test that it iterates over all elements using an object to accumulate
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            function Counter() { this.sum = 0; }
+            var counter = new Counter();
+            function addToCounter(x) { counter.sum = counter.sum + x; }
+            arr.forEach(addToCounter);
+            return counter.sum;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6));
+    }
+
+    #[test]
+    fn test_array_reduce() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4];
+            function add(acc, x) { return acc + x; }
+            return arr.reduce(add, 0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10));
+    }
+
+    #[test]
+    fn test_array_reduce_no_initial() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4];
+            function add(acc, x) { return acc + x; }
+            return arr.reduce(add);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10));
+    }
+
+    #[test]
+    fn test_array_find() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            function isGreaterThan3(x) { return x > 3; }
+            return arr.find(isGreaterThan3);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(4));
+    }
+
+    #[test]
+    fn test_array_find_index() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            function isGreaterThan3(x) { return x > 3; }
+            return arr.findIndex(isGreaterThan3);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_some() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            function isGreaterThan3(x) { return x > 3; }
+            return arr.some(isGreaterThan3) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_every() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [2, 4, 6, 8];
+            function isEven(x) { return x % 2 == 0; }
+            return arr.every(isEven) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_every_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [2, 4, 5, 8];
+            function isEven(x) { return x % 2 == 0; }
+            return arr.every(isEven) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_array_includes() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            return arr.includes(3) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_includes_not_found() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            return arr.includes(10) ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
 }

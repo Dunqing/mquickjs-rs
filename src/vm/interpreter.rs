@@ -2852,6 +2852,15 @@ impl Interpreter {
             "join" => self.get_native_func("Array.prototype.join").unwrap_or(Value::undefined()),
             "reverse" => self.get_native_func("Array.prototype.reverse").unwrap_or(Value::undefined()),
             "slice" => self.get_native_func("Array.prototype.slice").unwrap_or(Value::undefined()),
+            "map" => self.get_native_func("Array.prototype.map").unwrap_or(Value::undefined()),
+            "filter" => self.get_native_func("Array.prototype.filter").unwrap_or(Value::undefined()),
+            "forEach" => self.get_native_func("Array.prototype.forEach").unwrap_or(Value::undefined()),
+            "reduce" => self.get_native_func("Array.prototype.reduce").unwrap_or(Value::undefined()),
+            "find" => self.get_native_func("Array.prototype.find").unwrap_or(Value::undefined()),
+            "findIndex" => self.get_native_func("Array.prototype.findIndex").unwrap_or(Value::undefined()),
+            "some" => self.get_native_func("Array.prototype.some").unwrap_or(Value::undefined()),
+            "every" => self.get_native_func("Array.prototype.every").unwrap_or(Value::undefined()),
+            "includes" => self.get_native_func("Array.prototype.includes").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3109,6 +3118,15 @@ impl Interpreter {
         self.register_native("Array.prototype.join", native_array_join, 0);
         self.register_native("Array.prototype.reverse", native_array_reverse, 0);
         self.register_native("Array.prototype.slice", native_array_slice, 0);
+        self.register_native("Array.prototype.map", native_array_map, 1);
+        self.register_native("Array.prototype.filter", native_array_filter, 1);
+        self.register_native("Array.prototype.forEach", native_array_foreach, 1);
+        self.register_native("Array.prototype.reduce", native_array_reduce, 1);
+        self.register_native("Array.prototype.find", native_array_find, 1);
+        self.register_native("Array.prototype.findIndex", native_array_find_index, 1);
+        self.register_native("Array.prototype.some", native_array_some, 1);
+        self.register_native("Array.prototype.every", native_array_every, 1);
+        self.register_native("Array.prototype.includes", native_array_includes, 1);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
@@ -3351,6 +3369,275 @@ fn native_array_slice(interp: &mut Interpreter, this: Value, args: &[Value]) -> 
         let new_idx = interp.arrays.len() as u32;
         interp.arrays.push(slice);
         Ok(Value::array_idx(new_idx))
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.map - create new array with callback applied to each element
+fn native_array_map(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "map called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "map requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("map callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    let mut result = Vec::with_capacity(arr_clone.len());
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        let mapped = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+        result.push(mapped);
+    }
+
+    let new_idx = interp.arrays.len() as u32;
+    interp.arrays.push(result);
+    Ok(Value::array_idx(new_idx))
+}
+
+/// Array.prototype.filter - create new array with elements that pass the test
+fn native_array_filter(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "filter called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "filter requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("filter callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    let mut result = Vec::new();
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        let keep = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+
+        // Convert to boolean
+        if Interpreter::value_to_bool(keep) {
+            result.push(*element);
+        }
+    }
+
+    let new_idx = interp.arrays.len() as u32;
+    interp.arrays.push(result);
+    Ok(Value::array_idx(new_idx))
+}
+
+/// Array.prototype.forEach - call callback for each element
+fn native_array_foreach(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "forEach called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "forEach requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("forEach callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(Value::undefined())
+}
+
+/// Array.prototype.reduce - reduce array to single value
+fn native_array_reduce(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "reduce called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "reduce requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("reduce callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    if arr_clone.is_empty() && args.len() < 2 {
+        return Err("reduce of empty array with no initial value".to_string());
+    }
+
+    // Get initial value or first element
+    let (mut accumulator, start_idx) = if args.len() >= 2 {
+        (args[1], 0)
+    } else {
+        (arr_clone[0], 1)
+    };
+
+    for (i, element) in arr_clone.iter().enumerate().skip(start_idx) {
+        let call_args = vec![accumulator, *element, Value::int(i as i32), this];
+        accumulator = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(accumulator)
+}
+
+/// Array.prototype.find - find first element that satisfies the test
+fn native_array_find(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "find called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "find requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("find callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        let result = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+
+        if Interpreter::value_to_bool(result) {
+            return Ok(*element);
+        }
+    }
+
+    Ok(Value::undefined())
+}
+
+/// Array.prototype.findIndex - find index of first element that satisfies the test
+fn native_array_find_index(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "findIndex called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "findIndex requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("findIndex callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        let result = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+
+        if Interpreter::value_to_bool(result) {
+            return Ok(Value::int(i as i32));
+        }
+    }
+
+    Ok(Value::int(-1))
+}
+
+/// Array.prototype.some - check if any element satisfies the test
+fn native_array_some(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "some called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "some requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("some callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        let result = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+
+        if Interpreter::value_to_bool(result) {
+            return Ok(Value::bool(true));
+        }
+    }
+
+    Ok(Value::bool(false))
+}
+
+/// Array.prototype.every - check if all elements satisfy the test
+fn native_array_every(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "every called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "every requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("every callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    for (i, element) in arr_clone.iter().enumerate() {
+        let call_args = vec![*element, Value::int(i as i32), this];
+        let result = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+
+        if !Interpreter::value_to_bool(result) {
+            return Ok(Value::bool(false));
+        }
+    }
+
+    Ok(Value::bool(true))
+}
+
+/// Array.prototype.includes - check if array includes a value
+fn native_array_includes(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "includes called on non-array".to_string())?;
+
+    let search_val = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        for element in arr.iter() {
+            // Simple equality check
+            if element.raw() == search_val.raw() {
+                return Ok(Value::bool(true));
+            }
+        }
+        Ok(Value::bool(false))
     } else {
         Err("invalid array".to_string())
     }
