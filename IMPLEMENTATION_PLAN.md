@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 439 passing
+**Test Count**: 447 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -588,5 +588,15 @@
   - Reflect.apply(target, thisArg, argumentsList) - call function with this and args
 - Object.setPrototypeOf(obj, proto) - set prototype of object (returns object)
 - 10 new tests
+
+**Stage 6.17 Object.getOwnPropertyDescriptors, Number Constants**:
+- Object.getOwnPropertyDescriptors(obj) - get all property descriptors at once
+- Number static properties (aliases using 31-bit integer range):
+  - Number.parseInt (alias for global parseInt)
+  - Number.parseFloat (alias for global parseFloat)
+  - Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY
+  - Number.NaN (uses undefined as proxy)
+  - Number.EPSILON (1 for integer-based values)
+- 8 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

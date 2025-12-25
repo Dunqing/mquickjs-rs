@@ -4870,4 +4870,97 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
+
+    // ===========================================
+    // Stage 6.17: Object.getOwnPropertyDescriptors, Number constants
+    // ===========================================
+
+    #[test]
+    fn test_object_get_own_property_descriptors() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.a = 1; this.b = 2; }
+            var obj = new Obj();
+            var descriptors = Object.getOwnPropertyDescriptors(obj);
+            return descriptors.a !== undefined;
+        ").unwrap();
+        // Descriptor should exist
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_get_own_property_descriptors_value() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 42; }
+            var obj = new Obj();
+            var descriptors = Object.getOwnPropertyDescriptors(obj);
+            return descriptors.x.value;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_number_parse_float() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Note: parseFloat in this implementation only handles numbers, not string parsing
+        let result = ctx.eval("
+            return Number.parseFloat(123);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(123));
+    }
+
+    #[test]
+    fn test_number_parse_int() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Note: parseInt in this implementation only handles numbers, not string parsing
+        let result = ctx.eval("
+            return Number.parseInt(456);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(456));
+    }
+
+    #[test]
+    fn test_number_positive_infinity() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Number.POSITIVE_INFINITY > 0;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_number_negative_infinity() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Number.NEGATIVE_INFINITY < 0;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_number_nan_constant() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return isNaN(Number.NaN);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_number_epsilon() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return Number.EPSILON > 0;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
 }

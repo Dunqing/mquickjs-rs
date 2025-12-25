@@ -3483,11 +3483,17 @@ impl Interpreter {
                     "isNaN" => self.get_native_func("Number.isNaN").unwrap_or(Value::undefined()),
                     "isFinite" => self.get_native_func("Number.isFinite").unwrap_or(Value::undefined()),
                     "parseInt" => self.get_native_func("parseInt").unwrap_or(Value::undefined()),
+                    "parseFloat" => self.get_native_func("parseFloat").unwrap_or(Value::undefined()),
                     // Use 31-bit safe values (our Value::int only supports 31-bit signed integers)
+                    // Note: These don't match JS spec exactly; simplified for integer-based values
                     "MAX_VALUE" => Value::int((1 << 30) - 1), // 1073741823
-                    "MIN_VALUE" => Value::int(-(1 << 30)),    // -1073741824
+                    "MIN_VALUE" => Value::int(-(1 << 30)),    // -1073741824 (differs from JS spec)
                     "MAX_SAFE_INTEGER" => Value::int((1 << 30) - 1),
                     "MIN_SAFE_INTEGER" => Value::int(-(1 << 30)),
+                    "POSITIVE_INFINITY" => Value::int((1 << 30) - 1), // Use MAX_SAFE_INTEGER as proxy
+                    "NEGATIVE_INFINITY" => Value::int(-(1 << 30)),   // Use MIN_SAFE_INTEGER as proxy
+                    "NaN" => Value::undefined(), // No true NaN in integer-based values
+                    "EPSILON" => Value::int(1), // Smallest difference (our precision is integers)
                     _ => Value::undefined(),
                 }
             }
@@ -3534,6 +3540,7 @@ impl Interpreter {
                     "getPrototypeOf" => self.get_native_func("Object.getPrototypeOf").unwrap_or(Value::undefined()),
                     "setPrototypeOf" => self.get_native_func("Object.setPrototypeOf").unwrap_or(Value::undefined()),
                     "getOwnPropertyDescriptor" => self.get_native_func("Object.getOwnPropertyDescriptor").unwrap_or(Value::undefined()),
+                    "getOwnPropertyDescriptors" => self.get_native_func("Object.getOwnPropertyDescriptors").unwrap_or(Value::undefined()),
                     "defineProperty" => self.get_native_func("Object.defineProperty").unwrap_or(Value::undefined()),
                     "preventExtensions" => self.get_native_func("Object.preventExtensions").unwrap_or(Value::undefined()),
                     "isExtensible" => self.get_native_func("Object.isExtensible").unwrap_or(Value::undefined()),
@@ -3894,6 +3901,7 @@ impl Interpreter {
         self.register_native("Object.getPrototypeOf", native_object_get_prototype_of, 1);
         self.register_native("Object.setPrototypeOf", native_object_set_prototype_of, 2);
         self.register_native("Object.getOwnPropertyDescriptor", native_object_get_own_property_descriptor, 2);
+        self.register_native("Object.getOwnPropertyDescriptors", native_object_get_own_property_descriptors, 1);
         self.register_native("Object.defineProperty", native_object_define_property, 3);
         self.register_native("Object.preventExtensions", native_object_prevent_extensions, 1);
         self.register_native("Object.isExtensible", native_object_is_extensible, 1);
@@ -7632,6 +7640,94 @@ fn native_object_get_own_property_descriptor(interp: &mut Interpreter, _this: Va
     }
 
     Ok(Value::undefined())
+}
+
+/// Object.getOwnPropertyDescriptors - get all property descriptors
+fn native_object_get_own_property_descriptors(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    // Create result object
+    let mut result_props: Vec<(String, Value)> = Vec::new();
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        // Collect property info first to avoid borrow conflicts
+        let prop_info: Vec<(String, Value, bool, bool)> = if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            obj_data.properties.iter()
+                .map(|(k, v)| (k.clone(), *v, obj_data.frozen, obj_data.sealed))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Now create descriptor objects
+        for (key, value, frozen, sealed) in prop_info {
+            let descriptor = ObjectInstance {
+                constructor: None,
+                properties: vec![
+                    ("value".to_string(), value),
+                    ("writable".to_string(), Value::bool(!frozen)),
+                    ("enumerable".to_string(), Value::bool(true)),
+                    ("configurable".to_string(), Value::bool(!sealed)),
+                ],
+                frozen: false,
+                sealed: false,
+            };
+            let desc_idx = interp.objects.len() as u32;
+            interp.objects.push(descriptor);
+            result_props.push((key, Value::object_idx(desc_idx)));
+        }
+    } else if let Some(arr_idx) = obj.to_array_idx() {
+        // Collect array info first
+        let arr_len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+        let arr_values: Vec<Value> = interp.arrays.get(arr_idx as usize)
+            .map(|a| a.clone())
+            .unwrap_or_default();
+
+        // Create descriptors for array indices
+        for (i, value) in arr_values.into_iter().enumerate() {
+            let descriptor = ObjectInstance {
+                constructor: None,
+                properties: vec![
+                    ("value".to_string(), value),
+                    ("writable".to_string(), Value::bool(true)),
+                    ("enumerable".to_string(), Value::bool(true)),
+                    ("configurable".to_string(), Value::bool(true)),
+                ],
+                frozen: false,
+                sealed: false,
+            };
+            let desc_idx = interp.objects.len() as u32;
+            interp.objects.push(descriptor);
+            result_props.push((i.to_string(), Value::object_idx(desc_idx)));
+        }
+
+        // Create descriptor for length
+        let length_desc = ObjectInstance {
+            constructor: None,
+            properties: vec![
+                ("value".to_string(), Value::int(arr_len as i32)),
+                ("writable".to_string(), Value::bool(true)),
+                ("enumerable".to_string(), Value::bool(false)),
+                ("configurable".to_string(), Value::bool(false)),
+            ],
+            frozen: false,
+            sealed: false,
+        };
+        let desc_idx = interp.objects.len() as u32;
+        interp.objects.push(length_desc);
+        result_props.push(("length".to_string(), Value::object_idx(desc_idx)));
+    }
+
+    // Create result object
+    let result_obj = ObjectInstance {
+        constructor: None,
+        properties: result_props,
+        frozen: false,
+        sealed: false,
+    };
+    let result_idx = interp.objects.len() as u32;
+    interp.objects.push(result_obj);
+    Ok(Value::object_idx(result_idx))
 }
 
 /// Object.defineProperty - define a property on an object
