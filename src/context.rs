@@ -2781,6 +2781,80 @@ mod tests {
         assert_eq!(result.to_bool(), Some(true));
     }
 
+    #[test]
+    fn test_string_match_with_regexp() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.match with RegExp
+        let result = ctx.eval("
+            var pattern = \"wor\" + \"ld\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            var match = str.match(re);
+            return match[0];
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_match_no_match() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.match returns null when no match
+        let result = ctx.eval("
+            var pattern = \"xyz\" + \"\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            var match = str.match(re);
+            return match === null ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_string_match_global() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.match with global flag returns all matches
+        let result = ctx.eval("
+            var pattern = \"o\" + \"\";
+            var flags = \"\" + \"g\";
+            var re = new RegExp(pattern, flags);
+            var str = \"hello\" + \" world\";
+            var matches = str.match(re);
+            return matches.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(2)); // "hello world" has 2 'o's
+    }
+
+    #[test]
+    fn test_string_search_found() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.search returns index of match
+        let result = ctx.eval("
+            var pattern = \"wor\" + \"ld\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            return str.search(re);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6)); // "world" starts at index 6
+    }
+
+    #[test]
+    fn test_string_search_not_found() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.search returns -1 when not found
+        let result = ctx.eval("
+            var pattern = \"xyz\" + \"\";
+            var re = new RegExp(pattern);
+            var str = \"hello\" + \" world\";
+            return str.search(re);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(-1));
+    }
+
     // ========================================
     // Boolean Tests
     // ========================================

@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 306 passing
+**Test Count**: 311 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -313,8 +313,10 @@
 - String.prototype.padEnd(targetLength, padString) - pad from end
 - String.prototype.replace(search, replacement) - replace first occurrence
 - String.prototype.includes(search, position) - check contains
+- String.prototype.match(regexp) - match against RegExp, returns array or null
+- String.prototype.search(regexp) - search for match, returns index or -1
 - Note: Methods work on runtime strings (from concatenation); compile-time literal support pending
-- 19 String method tests
+- 24 String method tests
 
 **Stage 5.5 Number Static Methods**:
 - BUILTIN_NUMBER constant for Number object

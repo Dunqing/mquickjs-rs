@@ -2999,6 +2999,8 @@ impl Interpreter {
             "padEnd" => self.get_native_func("String.prototype.padEnd").unwrap_or(Value::undefined()),
             "replace" => self.get_native_func("String.prototype.replace").unwrap_or(Value::undefined()),
             "includes" => self.get_native_func("String.prototype.includes").unwrap_or(Value::undefined()),
+            "match" => self.get_native_func("String.prototype.match").unwrap_or(Value::undefined()),
+            "search" => self.get_native_func("String.prototype.search").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3294,6 +3296,8 @@ impl Interpreter {
         self.register_native("String.prototype.padEnd", native_string_pad_end, 1);
         self.register_native("String.prototype.replace", native_string_replace, 2);
         self.register_native("String.prototype.includes", native_string_includes, 1);
+        self.register_native("String.prototype.match", native_string_match, 1);
+        self.register_native("String.prototype.search", native_string_search, 1);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -4415,6 +4419,130 @@ fn native_string_includes(interp: &mut Interpreter, this: Value, args: &[Value])
     }
 
     Ok(Value::bool(s[position..].contains(&search)))
+}
+
+/// String.prototype.match - match string against a RegExp
+fn native_string_match(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "match called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    // Get the RegExp argument
+    let regex_arg = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // Check if it's a RegExp object
+    if let Some(regex_idx) = regex_arg.to_regexp_object_idx() {
+        let re = interp.regex_objects.get(regex_idx as usize)
+            .ok_or_else(|| "invalid RegExp object".to_string())?
+            .clone();
+
+        if re.global {
+            // Global match - return array of all matches
+            let matches: Vec<String> = re.regex.find_iter(&s)
+                .map(|m| m.as_str().to_string())
+                .collect();
+
+            if matches.is_empty() {
+                return Ok(Value::null());
+            }
+
+            // Create array of matched strings
+            let mut result_arr: Vec<Value> = Vec::with_capacity(matches.len());
+            for matched in matches {
+                let str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+                interp.runtime_strings.push(matched);
+                result_arr.push(Value::string(str_idx));
+            }
+
+            let arr_idx = interp.arrays.len() as u32;
+            interp.arrays.push(result_arr);
+            Ok(Value::array_idx(arr_idx))
+        } else {
+            // Non-global match - return first match with groups (like exec)
+            if let Some(m) = re.regex.find(&s) {
+                let matched = m.as_str().to_string();
+                let str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+                interp.runtime_strings.push(matched);
+
+                let arr_idx = interp.arrays.len() as u32;
+                interp.arrays.push(vec![Value::string(str_idx)]);
+                Ok(Value::array_idx(arr_idx))
+            } else {
+                Ok(Value::null())
+            }
+        }
+    } else if let Some(pattern_idx) = regex_arg.to_string_idx() {
+        // String argument - convert to RegExp
+        let pattern = interp.get_string_by_idx(pattern_idx)
+            .ok_or_else(|| "invalid pattern string".to_string())?
+            .to_string();
+
+        match regex::Regex::new(&pattern) {
+            Ok(re) => {
+                if let Some(m) = re.find(&s) {
+                    let matched = m.as_str().to_string();
+                    let str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+                    interp.runtime_strings.push(matched);
+
+                    let arr_idx = interp.arrays.len() as u32;
+                    interp.arrays.push(vec![Value::string(str_idx)]);
+                    Ok(Value::array_idx(arr_idx))
+                } else {
+                    Ok(Value::null())
+                }
+            }
+            Err(_) => Ok(Value::null()),
+        }
+    } else {
+        Ok(Value::null())
+    }
+}
+
+/// String.prototype.search - search for a match and return index
+fn native_string_search(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "search called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    // Get the RegExp argument
+    let regex_arg = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // Check if it's a RegExp object
+    if let Some(regex_idx) = regex_arg.to_regexp_object_idx() {
+        let re = interp.regex_objects.get(regex_idx as usize)
+            .ok_or_else(|| "invalid RegExp object".to_string())?
+            .clone();
+
+        if let Some(m) = re.regex.find(&s) {
+            Ok(Value::int(m.start() as i32))
+        } else {
+            Ok(Value::int(-1))
+        }
+    } else if let Some(pattern_idx) = regex_arg.to_string_idx() {
+        // String argument - convert to RegExp
+        let pattern = interp.get_string_by_idx(pattern_idx)
+            .ok_or_else(|| "invalid pattern string".to_string())?
+            .to_string();
+
+        match regex::Regex::new(&pattern) {
+            Ok(re) => {
+                if let Some(m) = re.find(&s) {
+                    Ok(Value::int(m.start() as i32))
+                } else {
+                    Ok(Value::int(-1))
+                }
+            }
+            Err(_) => Ok(Value::int(-1)),
+        }
+    } else {
+        Ok(Value::int(-1))
+    }
 }
 
 // =============================================================================
