@@ -623,4 +623,17 @@
 - Property access for boolean primitives (calls Boolean.prototype methods)
 - 11 new tests
 
+**Stage 6.20 Function.prototype.toString, Object.prototype Methods**:
+- Function.prototype.toString() - return string representation of function
+  - Returns "function () { [native code] }" for closures and functions
+  - Returns "function () { [bound] }" for bound functions
+- Object.prototype.isPrototypeOf(obj) - check if object is in prototype chain
+  - Array.prototype.isPrototypeOf for arrays
+  - Object.prototype.isPrototypeOf for objects
+- Object.prototype.propertyIsEnumerable(prop) - check if property is own enumerable
+  - Works with objects (checks properties vector)
+  - Works with arrays (checks valid indices)
+- Function property access now works for both GetField and GetField2 operations
+- 7 new tests
+
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

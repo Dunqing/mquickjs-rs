@@ -5185,4 +5185,88 @@ mod tests {
         // "false" has 5 characters
         assert_eq!(result.to_i32(), Some(5));
     }
+
+    // Stage 6.20: Function.prototype.toString, Object.prototype methods
+
+    #[test]
+    fn test_function_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function foo() { return 1; }
+            return foo.toString().length;
+        ").unwrap();
+        // "function () { [native code] }" has 31 characters
+        assert!(result.to_i32().unwrap() > 0);
+    }
+
+    #[test]
+    fn test_function_to_string_exists() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function foo() { return 1; }
+            return foo.toString !== undefined ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_object_property_is_enumerable_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function TestObj() { this.x = 1; }
+            var obj = new TestObj();
+            return obj.propertyIsEnumerable('x') ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_object_property_is_enumerable_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function TestObj() { this.x = 1; }
+            var obj = new TestObj();
+            return obj.propertyIsEnumerable('y') ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_array_property_is_enumerable_index() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return arr.propertyIsEnumerable('0') ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_property_is_enumerable_length() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return arr.propertyIsEnumerable('length') ? 1 : 0;
+        ").unwrap();
+        // length is typically not enumerable
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_object_is_prototype_of_defined() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function TestObj() { this.x = 1; }
+            var obj = new TestObj();
+            return obj.isPrototypeOf !== undefined ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }

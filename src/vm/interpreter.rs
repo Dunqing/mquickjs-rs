@@ -2500,6 +2500,10 @@ impl Interpreter {
                         // Boolean property access - check for Boolean.prototype methods
                         let val = self.get_boolean_property(prop_name);
                         self.stack.push(val);
+                    } else if obj.is_closure() || obj.to_func_ptr().is_some() {
+                        // Function property access - check for Function.prototype methods
+                        let val = self.get_function_property(prop_name);
+                        self.stack.push(val);
                     } else {
                         // For non-objects, return undefined
                         self.stack.push(Value::undefined());
@@ -3347,6 +3351,8 @@ impl Interpreter {
             "hasOwnProperty" => self.get_native_func("Object.prototype.hasOwnProperty").unwrap_or(Value::undefined()),
             "toString" => self.get_native_func("Object.prototype.toString").unwrap_or(Value::undefined()),
             "valueOf" => self.get_native_func("Object.prototype.valueOf").unwrap_or(Value::undefined()),
+            "isPrototypeOf" => self.get_native_func("Object.prototype.isPrototypeOf").unwrap_or(Value::undefined()),
+            "propertyIsEnumerable" => self.get_native_func("Object.prototype.propertyIsEnumerable").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3379,6 +3385,7 @@ impl Interpreter {
             "call" => self.get_native_func("Function.prototype.call").unwrap_or(Value::undefined()),
             "apply" => self.get_native_func("Function.prototype.apply").unwrap_or(Value::undefined()),
             "bind" => self.get_native_func("Function.prototype.bind").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Function.prototype.toString").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3932,6 +3939,8 @@ impl Interpreter {
         self.register_native("Object.prototype.hasOwnProperty", native_object_prototype_has_own_property, 1);
         self.register_native("Object.prototype.toString", native_object_prototype_to_string, 0);
         self.register_native("Object.prototype.valueOf", native_object_prototype_value_of, 0);
+        self.register_native("Object.prototype.isPrototypeOf", native_object_prototype_is_prototype_of, 1);
+        self.register_native("Object.prototype.propertyIsEnumerable", native_object_prototype_property_is_enumerable, 1);
         self.register_native("Object.is", native_object_is, 2);
         self.register_native("Object.getPrototypeOf", native_object_get_prototype_of, 1);
         self.register_native("Object.setPrototypeOf", native_object_set_prototype_of, 2);
@@ -3951,6 +3960,7 @@ impl Interpreter {
         self.register_native("Function.prototype.call", native_function_call, 0);
         self.register_native("Function.prototype.apply", native_function_apply, 0);
         self.register_native("Function.prototype.bind", native_function_bind, 0);
+        self.register_native("Function.prototype.toString", native_function_to_string, 0);
     }
 }
 
@@ -7761,6 +7771,67 @@ fn native_object_prototype_value_of(_interp: &mut Interpreter, this: Value, _arg
     Ok(this)
 }
 
+/// Object.prototype.isPrototypeOf - check if this object is in prototype chain of another
+fn native_object_prototype_is_prototype_of(_interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+
+    // Simple check: if target is an array and this is BUILTIN_ARRAY, return true
+    if let Some(_arr_idx) = target.to_array_idx() {
+        if let Some(builtin_idx) = this.to_builtin_object_idx() {
+            if builtin_idx == BUILTIN_ARRAY {
+                return Ok(Value::bool(true));
+            }
+        }
+    }
+
+    // For objects, check if this is Object.prototype (BUILTIN_OBJECT)
+    if let Some(_obj_idx) = target.to_object_idx() {
+        if let Some(builtin_idx) = this.to_builtin_object_idx() {
+            if builtin_idx == BUILTIN_OBJECT {
+                return Ok(Value::bool(true));
+            }
+        }
+    }
+
+    Ok(Value::bool(false))
+}
+
+/// Object.prototype.propertyIsEnumerable - check if property is own enumerable
+fn native_object_prototype_property_is_enumerable(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let prop_name = args.first().copied().unwrap_or(Value::undefined());
+
+    // Convert property name to string
+    let prop_str: String = if let Some(str_idx) = prop_name.to_string_idx() {
+        interp.get_string_by_idx(str_idx).unwrap_or_default().to_string()
+    } else if let Some(n) = prop_name.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    // Check if property exists on object
+    if let Some(obj_idx) = this.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            // All own properties are enumerable in our implementation
+            let has_prop = obj_data.properties.iter().any(|(k, _)| k == &prop_str);
+            return Ok(Value::bool(has_prop));
+        }
+    } else if let Some(arr_idx) = this.to_array_idx() {
+        if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+            // Check if it's a valid array index
+            if let Ok(idx) = prop_str.parse::<usize>() {
+                return Ok(Value::bool(idx < arr.len()));
+            }
+            // "length" is an own property but typically not enumerable
+            if prop_str == "length" {
+                return Ok(Value::bool(false));
+            }
+        }
+    }
+
+    Ok(Value::bool(false))
+}
+
 /// Object.is - strict equality comparison (like === but handles NaN and -0)
 fn native_object_is(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let value1 = args.first().copied().unwrap_or(Value::undefined());
@@ -8717,6 +8788,36 @@ fn native_function_bind(interp: &mut Interpreter, this: Value, args: &[Value]) -
 
     // Return as object (will be callable via special handling)
     Ok(Value::object_idx(obj_idx))
+}
+
+/// Function.prototype.toString - return string representation of function
+fn native_function_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    // Return a standard function representation
+    let result = if this.is_closure() {
+        "function () { [native code] }".to_string()
+    } else if this.to_func_ptr().is_some() {
+        "function () { [native code] }".to_string()
+    } else if let Some(native_idx) = this.to_native_func_idx() {
+        // Native function
+        format!("function () {{ [native code] }}")
+    } else if let Some(obj_idx) = this.to_object_idx() {
+        // Could be a bound function
+        if let Some(obj) = interp.objects.get(obj_idx as usize) {
+            let is_bound = obj.properties.iter()
+                .any(|(k, v)| k == "__is_bound__" && v.to_bool() == Some(true));
+            if is_bound {
+                "function () { [bound] }".to_string()
+            } else {
+                "[object Object]".to_string()
+            }
+        } else {
+            "[object Object]".to_string()
+        }
+    } else {
+        return Err("Function.prototype.toString requires a function".to_string());
+    };
+
+    Ok(interp.create_runtime_string(result))
 }
 
 impl Default for Interpreter {
