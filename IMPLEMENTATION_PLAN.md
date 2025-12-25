@@ -609,4 +609,18 @@
   - Returns object with arrays grouped by key
 - 7 new tests
 
+**Stage 6.19 Number/Boolean Prototype Methods, String.raw**:
+- Number.prototype methods:
+  - Number.prototype.toExponential(digits) - format in exponential notation (e.g., "1.23e+4")
+  - Number.prototype.toPrecision(precision) - format to specified precision
+  - Number.prototype.valueOf() - return primitive number value
+- Boolean.prototype methods:
+  - Boolean.prototype.valueOf() - return primitive boolean value
+  - Boolean.prototype.toString() - return "true" or "false" string
+- String.raw static method:
+  - String.raw(template, ...substitutions) - get raw template string with substitutions
+  - Used with template literal objects containing raw array
+- Property access for boolean primitives (calls Boolean.prototype methods)
+- 11 new tests
+
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

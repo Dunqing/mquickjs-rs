@@ -2496,6 +2496,10 @@ impl Interpreter {
                         // Number property access - check for Number.prototype methods
                         let val = self.get_number_property(prop_name);
                         self.stack.push(val);
+                    } else if obj.to_bool().is_some() {
+                        // Boolean property access - check for Boolean.prototype methods
+                        let val = self.get_boolean_property(prop_name);
+                        self.stack.push(val);
                     } else {
                         // For non-objects, return undefined
                         self.stack.push(Value::undefined());
@@ -2550,6 +2554,9 @@ impl Interpreter {
                     } else if obj.is_int() {
                         // Number.prototype methods
                         self.get_number_property(prop_name)
+                    } else if obj.to_bool().is_some() {
+                        // Boolean.prototype methods
+                        self.get_boolean_property(prop_name)
                     } else if obj.is_closure() || obj.to_func_ptr().is_some() {
                         // Function.prototype methods (call, apply, bind)
                         self.get_function_property(prop_name)
@@ -3318,6 +3325,18 @@ impl Interpreter {
         match prop_name {
             "toFixed" => self.get_native_func("Number.prototype.toFixed").unwrap_or(Value::undefined()),
             "toString" => self.get_native_func("Number.prototype.toString").unwrap_or(Value::undefined()),
+            "toExponential" => self.get_native_func("Number.prototype.toExponential").unwrap_or(Value::undefined()),
+            "toPrecision" => self.get_native_func("Number.prototype.toPrecision").unwrap_or(Value::undefined()),
+            "valueOf" => self.get_native_func("Number.prototype.valueOf").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
+    /// Get a property from a boolean (Boolean.prototype methods)
+    fn get_boolean_property(&self, prop_name: &str) -> Value {
+        match prop_name {
+            "valueOf" => self.get_native_func("Boolean.prototype.valueOf").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Boolean.prototype.toString").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3565,6 +3584,7 @@ impl Interpreter {
                 match prop_name {
                     "fromCharCode" => self.get_native_func("String.fromCharCode").unwrap_or(Value::undefined()),
                     "fromCodePoint" => self.get_native_func("String.fromCodePoint").unwrap_or(Value::undefined()),
+                    "raw" => self.get_native_func("String.raw").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3806,6 +3826,13 @@ impl Interpreter {
         // Number methods
         self.register_native("Number.prototype.toFixed", native_number_to_fixed, 1);
         self.register_native("Number.prototype.toString", native_number_to_string, 1);
+        self.register_native("Number.prototype.toExponential", native_number_to_exponential, 1);
+        self.register_native("Number.prototype.toPrecision", native_number_to_precision, 1);
+        self.register_native("Number.prototype.valueOf", native_number_value_of, 0);
+
+        // Boolean methods
+        self.register_native("Boolean.prototype.valueOf", native_boolean_value_of, 0);
+        self.register_native("Boolean.prototype.toString", native_boolean_to_string, 0);
 
         // String methods
         self.register_native("String.prototype.charAt", native_string_char_at, 1);
@@ -3837,6 +3864,7 @@ impl Interpreter {
         self.register_native("String.prototype.localeCompare", native_string_locale_compare, 1);
         self.register_native("String.fromCharCode", native_string_from_char_code, 0);
         self.register_native("String.fromCodePoint", native_string_from_code_point, 0);
+        self.register_native("String.raw", native_string_raw, 1);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -5564,6 +5592,88 @@ fn native_number_to_string(interp: &mut Interpreter, this: Value, args: &[Value]
     Ok(interp.create_runtime_string(result))
 }
 
+/// Number.prototype.toExponential - format number in exponential notation
+fn native_number_to_exponential(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let num = if let Some(n) = this.to_i32() {
+        n
+    } else {
+        return Err("toExponential called on non-number".to_string());
+    };
+
+    let digits = args.get(0).and_then(|v| v.to_i32()).unwrap_or(6);
+
+    if digits < 0 || digits > 100 {
+        return Err("toExponential() digits argument must be between 0 and 100".to_string());
+    }
+
+    // Simple exponential format for integers
+    let abs_num = num.abs();
+    let sign = if num < 0 { "-" } else { "" };
+
+    if abs_num == 0 {
+        let zeros = "0".repeat(digits as usize);
+        let result = if digits > 0 {
+            format!("{}0.{}e+0", sign, zeros)
+        } else {
+            format!("{}0e+0", sign)
+        };
+        return Ok(interp.create_runtime_string(result));
+    }
+
+    // Calculate exponent
+    let mut exp = 0i32;
+    let mut val = abs_num;
+    while val >= 10 {
+        val /= 10;
+        exp += 1;
+    }
+
+    // Format mantissa
+    let mantissa = abs_num as f64 / 10f64.powi(exp);
+    let result = if digits > 0 {
+        format!("{}{:.prec$}e+{}", sign, mantissa, exp, prec = digits as usize)
+    } else {
+        format!("{}{}e+{}", sign, val, exp)
+    };
+
+    Ok(interp.create_runtime_string(result))
+}
+
+/// Number.prototype.toPrecision - format number to specified precision
+fn native_number_to_precision(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let num = if let Some(n) = this.to_i32() {
+        n
+    } else {
+        return Err("toPrecision called on non-number".to_string());
+    };
+
+    // If no argument, just return toString
+    let precision = match args.get(0) {
+        Some(v) => match v.to_i32() {
+            Some(p) => p,
+            None => return Ok(interp.create_runtime_string(num.to_string())),
+        },
+        None => return Ok(interp.create_runtime_string(num.to_string())),
+    };
+
+    if precision < 1 || precision > 100 {
+        return Err("toPrecision() precision must be between 1 and 100".to_string());
+    }
+
+    // For simplicity, just format with the requested significant digits
+    let result = format!("{:.prec$}", num as f64, prec = (precision - 1) as usize);
+    Ok(interp.create_runtime_string(result))
+}
+
+/// Number.prototype.valueOf - return primitive value
+fn native_number_value_of(_interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    if let Some(n) = this.to_i32() {
+        Ok(Value::int(n))
+    } else {
+        Err("valueOf called on non-number".to_string())
+    }
+}
+
 // =============================================================================
 // String.prototype methods
 // =============================================================================
@@ -6399,6 +6509,70 @@ fn native_string_from_code_point(interp: &mut Interpreter, _this: Value, args: &
     Ok(Value::string(new_str_idx))
 }
 
+/// String.raw - template literal tag that returns raw string
+fn native_string_raw(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    // String.raw gets a template object with raw property
+    // For our simplified implementation, we just concatenate strings and substitutions
+    let template = args.first().copied().unwrap_or(Value::undefined());
+
+    // Try to get raw array from template object
+    let raw_arr = if let Some(obj_idx) = template.to_object_idx() {
+        if let Some(obj) = interp.objects.get(obj_idx as usize) {
+            obj.properties.iter()
+                .find(|(k, _)| k == "raw")
+                .and_then(|(_, v)| v.to_array_idx())
+        } else {
+            None
+        }
+    } else if let Some(arr_idx) = template.to_array_idx() {
+        // Template might be the raw array directly
+        Some(arr_idx)
+    } else {
+        None
+    };
+
+    let raw_strings: Vec<String> = if let Some(arr_idx) = raw_arr {
+        if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+            arr.iter().map(|v| {
+                if let Some(str_idx) = v.to_string_idx() {
+                    interp.get_string_by_idx(str_idx)
+                        .map(|s| s.to_string())
+                        .unwrap_or_default()
+                } else if let Some(n) = v.to_i32() {
+                    n.to_string()
+                } else {
+                    String::new()
+                }
+            }).collect()
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
+    // Interleave raw strings with substitutions
+    let mut result = String::new();
+    for (i, raw) in raw_strings.iter().enumerate() {
+        result.push_str(raw);
+        if i < args.len() - 1 {
+            // Get substitution value
+            let sub = args.get(i + 1).copied().unwrap_or(Value::undefined());
+            if let Some(str_idx) = sub.to_string_idx() {
+                if let Some(s) = interp.get_string_by_idx(str_idx) {
+                    result.push_str(s);
+                }
+            } else if let Some(n) = sub.to_i32() {
+                result.push_str(&n.to_string());
+            } else if let Some(b) = sub.to_bool() {
+                result.push_str(&b.to_string());
+            }
+        }
+    }
+
+    Ok(interp.create_runtime_string(result))
+}
+
 /// String.prototype.normalize - returns Unicode Normalization Form of string
 fn native_string_normalize(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
     let str_idx = this.to_string_idx()
@@ -6484,6 +6658,29 @@ fn native_number_is_finite(_interp: &mut Interpreter, _this: Value, args: &[Valu
         Ok(Value::bool(true))
     } else {
         Ok(Value::bool(false))
+    }
+}
+
+// =============================================================================
+// Boolean.prototype methods
+// =============================================================================
+
+/// Boolean.prototype.valueOf - return primitive boolean value
+fn native_boolean_value_of(_interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    if let Some(b) = this.to_bool() {
+        Ok(Value::bool(b))
+    } else {
+        Err("valueOf called on non-boolean".to_string())
+    }
+}
+
+/// Boolean.prototype.toString - return "true" or "false"
+fn native_boolean_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    if let Some(b) = this.to_bool() {
+        let s = if b { "true" } else { "false" };
+        Ok(interp.create_runtime_string(s.to_string()))
+    } else {
+        Err("toString called on non-boolean".to_string())
     }
 }
 
