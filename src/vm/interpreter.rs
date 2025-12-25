@@ -2122,27 +2122,73 @@ impl Interpreter {
                     self.stack.push(arr_val);
                 }
 
-                // GetArrayEl - get array element: arr idx -> val
+                // GetArrayEl - get array element or object property: obj idx/key -> val
                 op if op == OpCode::GetArrayEl as u8 => {
                     let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    let arr = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    let obj = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
 
-                    // Get the array
-                    let arr_idx = arr.to_array_idx().ok_or_else(|| {
-                        InterpreterError::TypeError("cannot read property of non-array".to_string())
-                    })?;
+                    // Handle arrays
+                    if let Some(arr_idx) = obj.to_array_idx() {
+                        if let Some(array) = self.get_array(arr_idx) {
+                            // Try string key for array methods
+                            if let Some(str_idx) = idx.to_string_idx() {
+                                if let Some(key) = self.get_string_by_idx(str_idx) {
+                                    let val = self.get_array_property(obj, key);
+                                    self.stack.push(val);
+                                    continue;
+                                }
+                            }
+                            // Numeric index
+                            let index = idx.to_i32().unwrap_or(0) as usize;
+                            let val = array.get(index).copied().unwrap_or(Value::undefined());
+                            self.stack.push(val);
+                            continue;
+                        }
+                    }
 
-                    let array = self.get_array(arr_idx).ok_or_else(|| {
-                        InterpreterError::InternalError("invalid array index".to_string())
-                    })?;
+                    // Handle objects
+                    if let Some(obj_idx) = obj.to_object_idx() {
+                        let key = if let Some(str_idx) = idx.to_string_idx() {
+                            self.get_string_by_idx(str_idx).unwrap_or("").to_string()
+                        } else if let Some(n) = idx.to_i32() {
+                            n.to_string()
+                        } else {
+                            String::new()
+                        };
 
-                    // Get the element
-                    let index = idx.to_i32().ok_or_else(|| {
-                        InterpreterError::TypeError("array index must be a number".to_string())
-                    })? as usize;
+                        let val = self.objects
+                            .get(obj_idx as usize)
+                            .and_then(|o| o.properties.iter().find(|(k, _)| k == &key).map(|(_, v)| *v))
+                            .unwrap_or(Value::undefined());
+                        self.stack.push(val);
+                        continue;
+                    }
 
-                    let val = array.get(index).copied().unwrap_or(Value::undefined());
-                    self.stack.push(val);
+                    // Handle builtin objects (like Array, Object)
+                    if let Some(builtin_idx) = obj.to_builtin_object_idx() {
+                        if let Some(str_idx) = idx.to_string_idx() {
+                            if let Some(key) = self.get_string_by_idx(str_idx) {
+                                let val = self.get_builtin_property(builtin_idx, key);
+                                self.stack.push(val);
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Handle strings
+                    if let Some(str_idx) = obj.to_string_idx() {
+                        if let Some(n) = idx.to_i32() {
+                            if let Some(s) = self.get_string_by_idx(str_idx) {
+                                if let Some(c) = s.chars().nth(n as usize) {
+                                    let val = self.create_runtime_string(c.to_string());
+                                    self.stack.push(val);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    self.stack.push(Value::undefined());
                 }
 
                 // GetArrayEl2 - get array element, keep object: arr idx -> arr val
@@ -3130,6 +3176,8 @@ impl Interpreter {
                     "keys" => self.get_native_func("Object.keys").unwrap_or(Value::undefined()),
                     "values" => self.get_native_func("Object.values").unwrap_or(Value::undefined()),
                     "entries" => self.get_native_func("Object.entries").unwrap_or(Value::undefined()),
+                    "assign" => self.get_native_func("Object.assign").unwrap_or(Value::undefined()),
+                    "create" => self.get_native_func("Object.create").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3137,6 +3185,8 @@ impl Interpreter {
                 // Array static methods
                 match prop_name {
                     "isArray" => self.get_native_func("Array.isArray").unwrap_or(Value::undefined()),
+                    "from" => self.get_native_func("Array.from").unwrap_or(Value::undefined()),
+                    "of" => self.get_native_func("Array.of").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3332,9 +3382,13 @@ impl Interpreter {
         self.register_native("Object.keys", native_object_keys, 1);
         self.register_native("Object.values", native_object_values, 1);
         self.register_native("Object.entries", native_object_entries, 1);
+        self.register_native("Object.assign", native_object_assign, 2);
+        self.register_native("Object.create", native_object_create, 1);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
+        self.register_native("Array.from", native_array_from, 1);
+        self.register_native("Array.of", native_array_of, 0);
 
         // Function.prototype methods
         self.register_native("Function.prototype.call", native_function_call, 0);
@@ -5423,9 +5477,188 @@ fn native_object_entries(interp: &mut Interpreter, _this: Value, args: &[Value])
     Ok(Value::array_idx(arr_idx))
 }
 
+/// Object.assign - copies properties from source objects to target object
+fn native_object_assign(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let target = args.first().copied().unwrap_or(Value::undefined());
+
+    // Target must be an object
+    let target_idx = match target.to_object_idx() {
+        Some(idx) => idx as usize,
+        None => {
+            // If target is not an object, create a new object
+            let obj_idx = interp.objects.len();
+            interp.objects.push(ObjectInstance::new());
+            obj_idx
+        }
+    };
+
+    // Copy properties from each source object
+    for source in args.iter().skip(1) {
+        if source.is_undefined() || source.is_null() {
+            continue;
+        }
+
+        if let Some(src_idx) = source.to_object_idx() {
+            // Clone source properties to avoid borrow issues
+            let props: Vec<(String, Value)> = interp.objects
+                .get(src_idx as usize)
+                .map(|obj| obj.properties.clone())
+                .unwrap_or_default();
+
+            for (key, value) in props {
+                // Set property on target
+                if let Some(target_obj) = interp.objects.get_mut(target_idx) {
+                    // Check if property already exists
+                    let mut found = false;
+                    for (k, v) in target_obj.properties.iter_mut() {
+                        if k == &key {
+                            *v = value;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        target_obj.properties.push((key, value));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Value::object_idx(target_idx as u32))
+}
+
+/// Object.create - creates a new object with the specified prototype
+fn native_object_create(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let proto = args.first().copied().unwrap_or(Value::null());
+
+    // Create new object
+    let mut obj = ObjectInstance::new();
+
+    // Set prototype (simplified - just store as __proto__ property)
+    if !proto.is_null() {
+        obj.properties.push(("__proto__".to_string(), proto));
+    }
+
+    // If second argument is provided, add properties from it
+    if let Some(props_desc) = args.get(1) {
+        if let Some(props_idx) = props_desc.to_object_idx() {
+            // Clone properties to avoid borrow issues
+            let props: Vec<(String, Value)> = interp.objects
+                .get(props_idx as usize)
+                .map(|o| o.properties.clone())
+                .unwrap_or_default();
+
+            // For each property descriptor, get the 'value' property
+            for (key, desc_val) in props {
+                if let Some(desc_idx) = desc_val.to_object_idx() {
+                    let desc_props: Vec<(String, Value)> = interp.objects
+                        .get(desc_idx as usize)
+                        .map(|o| o.properties.clone())
+                        .unwrap_or_default();
+
+                    // Find 'value' in the descriptor
+                    for (dk, dv) in desc_props {
+                        if dk == "value" {
+                            obj.properties.push((key.clone(), dv));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let obj_idx = interp.objects.len() as u32;
+    interp.objects.push(obj);
+    Ok(Value::object_idx(obj_idx))
+}
+
 // ===========================================
 // Array Static Methods
 // ===========================================
+
+/// Array.from - creates an array from an iterable or array-like object
+fn native_array_from(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let source = args.first().copied().unwrap_or(Value::undefined());
+    let map_fn = args.get(1).copied();
+
+    let mut result: Vec<Value> = Vec::new();
+
+    if let Some(arr_idx) = source.to_array_idx() {
+        // Source is an array - copy its elements
+        let elements: Vec<Value> = interp.get_array(arr_idx)
+            .map(|arr| arr.clone())
+            .unwrap_or_default();
+
+        if let Some(mapper) = map_fn {
+            // Apply map function to each element
+            for (i, elem) in elements.into_iter().enumerate() {
+                let mapped = interp.call_value(mapper, Value::undefined(), &[elem, Value::int(i as i32)])
+                    .map_err(|e| e.to_string())?;
+                result.push(mapped);
+            }
+        } else {
+            result = elements;
+        }
+    } else if let Some(str_idx) = source.to_string_idx() {
+        // Source is a string - convert to array of characters
+        let s = interp.get_string_by_idx(str_idx)
+            .unwrap_or("")
+            .to_string();
+
+        for (i, c) in s.chars().enumerate() {
+            let char_str = interp.create_runtime_string(c.to_string());
+            if let Some(mapper) = map_fn {
+                let mapped = interp.call_value(mapper, Value::undefined(), &[char_str, Value::int(i as i32)])
+                    .map_err(|e| e.to_string())?;
+                result.push(mapped);
+            } else {
+                result.push(char_str);
+            }
+        }
+    } else if let Some(obj_idx) = source.to_object_idx() {
+        // Source is an array-like object with 'length' property
+        let (length, props) = {
+            let obj = interp.objects.get(obj_idx as usize);
+            let len = obj.and_then(|o| {
+                o.properties.iter()
+                    .find(|(k, _)| k == "length")
+                    .and_then(|(_, v)| v.to_i32())
+            }).unwrap_or(0);
+            let props = obj.map(|o| o.properties.clone()).unwrap_or_default();
+            (len, props)
+        };
+
+        for i in 0..length {
+            let key = i.to_string();
+            let elem = props.iter()
+                .find(|(k, _)| k == &key)
+                .map(|(_, v)| *v)
+                .unwrap_or(Value::undefined());
+
+            if let Some(mapper) = map_fn {
+                let mapped = interp.call_value(mapper, Value::undefined(), &[elem, Value::int(i)])
+                    .map_err(|e| e.to_string())?;
+                result.push(mapped);
+            } else {
+                result.push(elem);
+            }
+        }
+    }
+
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(result);
+    Ok(Value::array_idx(arr_idx))
+}
+
+/// Array.of - creates an array from the given arguments
+fn native_array_of(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let elements: Vec<Value> = args.iter().copied().collect();
+    let arr_idx = interp.arrays.len() as u32;
+    interp.arrays.push(elements);
+    Ok(Value::array_idx(arr_idx))
+}
 
 /// Array.isArray - check if value is an array
 fn native_array_is_array(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {

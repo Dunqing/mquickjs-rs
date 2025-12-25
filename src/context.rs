@@ -3362,4 +3362,112 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(6)); // 1 + 0 + 5
     }
+
+    // Object.assign tests
+    #[test]
+    fn test_object_assign() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Target() { this.a = 1; }
+            function Source() { this.b = 2; }
+            var target = new Target();
+            var source = new Source();
+            var result = Object.assign(target, source);
+            return result.a + result.b;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_object_assign_multiple_sources() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Empty() {}
+            function S1() { this.a = 1; }
+            function S2() { this.b = 2; }
+            function S3() { this.c = 3; }
+            var target = new Empty();
+            var result = Object.assign(target, new S1(), new S2(), new S3());
+            return result.a + result.b + result.c;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6));
+    }
+
+    #[test]
+    fn test_object_assign_overwrites() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Target() { this.a = 1; this.b = 2; }
+            function Source() { this.a = 10; }
+            var target = new Target();
+            var result = Object.assign(target, new Source());
+            return result.a + result.b;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(12)); // 10 + 2
+    }
+
+    // Object.create tests
+    #[test]
+    fn test_object_create() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var obj = Object.create(null);
+            obj.x = 42;
+            return obj.x;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    // Array.from tests
+    #[test]
+    fn test_array_from_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var source = [1, 2, 3];
+            var arr = Array.from(source);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_from_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = Array.from('abc');
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    // Array.of tests (use bracket notation since 'of' is a keyword)
+    #[test]
+    fn test_array_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arrayOf = Array['of'];
+            var arr = arrayOf(1, 2, 3, 4, 5);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_array_of_values() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arrayOf = Array['of'];
+            var arr = arrayOf(10, 20, 30);
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(60));
+    }
 }

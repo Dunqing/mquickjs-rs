@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 319 passing
+**Test Count**: 327 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -422,4 +422,13 @@
 - get_regexp_property() for property access
 - 8 RegExp tests
 
-**Next Action**: Implement TypedArray (Stage 6.5) or more String methods
+**Stage 6.5 Object/Array Static Methods**:
+- Object.assign(target, ...sources) - copies properties from sources to target
+- Object.create(proto) - creates object with specified prototype
+- Array.from(iterable, mapFn) - creates array from iterable or array-like
+- Array.of(...elements) - creates array from arguments
+- Improved GetArrayEl opcode to handle objects and builtin objects
+- Bracket notation property access on builtin objects (Array['of'], etc.)
+- 8 new tests (3 Object.assign, 1 Object.create, 2 Array.from, 2 Array.of)
+
+**Next Action**: Implement TypedArray (Stage 6.6) or more String methods
