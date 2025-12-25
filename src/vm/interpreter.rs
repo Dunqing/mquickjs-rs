@@ -54,6 +54,8 @@ pub const BUILTIN_UINT16_ARRAY: u32 = 20;
 pub const BUILTIN_INT32_ARRAY: u32 = 21;
 /// Uint32Array constructor index
 pub const BUILTIN_UINT32_ARRAY: u32 = 22;
+/// Performance object index
+pub const BUILTIN_PERFORMANCE: u32 = 23;
 
 /// Native function signature
 ///
@@ -2244,6 +2246,7 @@ impl Interpreter {
                         "Object" => Some(Value::builtin_object(BUILTIN_OBJECT)),
                         "Array" => Some(Value::builtin_object(BUILTIN_ARRAY)),
                         "console" => Some(Value::builtin_object(BUILTIN_CONSOLE)),
+                        "performance" => Some(Value::builtin_object(BUILTIN_PERFORMANCE)),
                         "Date" => Some(Value::builtin_object(BUILTIN_DATE)),
                         "Error" => Some(Value::builtin_object(BUILTIN_ERROR)),
                         "TypeError" => Some(Value::builtin_object(BUILTIN_TYPE_ERROR)),
@@ -3242,6 +3245,7 @@ impl Interpreter {
             "shift" => self.get_native_func("Array.prototype.shift").unwrap_or(Value::undefined()),
             "unshift" => self.get_native_func("Array.prototype.unshift").unwrap_or(Value::undefined()),
             "indexOf" => self.get_native_func("Array.prototype.indexOf").unwrap_or(Value::undefined()),
+            "lastIndexOf" => self.get_native_func("Array.prototype.lastIndexOf").unwrap_or(Value::undefined()),
             "join" => self.get_native_func("Array.prototype.join").unwrap_or(Value::undefined()),
             "reverse" => self.get_native_func("Array.prototype.reverse").unwrap_or(Value::undefined()),
             "slice" => self.get_native_func("Array.prototype.slice").unwrap_or(Value::undefined()),
@@ -3275,7 +3279,9 @@ impl Interpreter {
                 Value::int(0)
             }
             "charAt" => self.get_native_func("String.prototype.charAt").unwrap_or(Value::undefined()),
+            "charCodeAt" => self.get_native_func("String.prototype.charCodeAt").unwrap_or(Value::undefined()),
             "indexOf" => self.get_native_func("String.prototype.indexOf").unwrap_or(Value::undefined()),
+            "lastIndexOf" => self.get_native_func("String.prototype.lastIndexOf").unwrap_or(Value::undefined()),
             "slice" => self.get_native_func("String.prototype.slice").unwrap_or(Value::undefined()),
             "substring" => self.get_native_func("String.prototype.substring").unwrap_or(Value::undefined()),
             "toUpperCase" => self.get_native_func("String.prototype.toUpperCase").unwrap_or(Value::undefined()),
@@ -3430,6 +3436,13 @@ impl Interpreter {
                     _ => Value::undefined(),
                 }
             }
+            BUILTIN_PERFORMANCE => {
+                // performance object properties
+                match prop_name {
+                    "now" => self.get_native_func("performance.now").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             BUILTIN_DATE => {
                 // Date object properties
                 match prop_name {
@@ -3453,6 +3466,14 @@ impl Interpreter {
                     _ => Value::undefined(),
                 }
             }
+            BUILTIN_STRING => {
+                // String static methods
+                match prop_name {
+                    "fromCharCode" => self.get_native_func("String.fromCharCode").unwrap_or(Value::undefined()),
+                    "fromCodePoint" => self.get_native_func("String.fromCodePoint").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             BUILTIN_GLOBAL_THIS => {
                 // globalThis provides access to global builtins
                 match prop_name {
@@ -3467,6 +3488,7 @@ impl Interpreter {
                     "Object" => Value::builtin_object(BUILTIN_OBJECT),
                     "Array" => Value::builtin_object(BUILTIN_ARRAY),
                     "console" => Value::builtin_object(BUILTIN_CONSOLE),
+                    "performance" => Value::builtin_object(BUILTIN_PERFORMANCE),
                     "Date" => Value::builtin_object(BUILTIN_DATE),
                     "Error" => Value::builtin_object(BUILTIN_ERROR),
                     "RegExp" => Value::builtin_object(BUILTIN_REGEXP),
@@ -3592,6 +3614,7 @@ impl Interpreter {
         self.register_native("Array.prototype.shift", native_array_shift, 0);
         self.register_native("Array.prototype.unshift", native_array_unshift, 0);
         self.register_native("Array.prototype.indexOf", native_array_index_of, 1);
+        self.register_native("Array.prototype.lastIndexOf", native_array_last_index_of, 1);
         self.register_native("Array.prototype.join", native_array_join, 0);
         self.register_native("Array.prototype.reverse", native_array_reverse, 0);
         self.register_native("Array.prototype.slice", native_array_slice, 0);
@@ -3632,7 +3655,11 @@ impl Interpreter {
 
         // String methods
         self.register_native("String.prototype.charAt", native_string_char_at, 1);
+        self.register_native("String.prototype.charCodeAt", native_string_char_code_at, 1);
         self.register_native("String.prototype.indexOf", native_string_index_of, 1);
+        self.register_native("String.prototype.lastIndexOf", native_string_last_index_of, 1);
+        self.register_native("String.fromCharCode", native_string_from_char_code, 0);
+        self.register_native("String.fromCodePoint", native_string_from_code_point, 0);
         self.register_native("String.prototype.slice", native_string_slice, 0);
         self.register_native("String.prototype.substring", native_string_substring, 0);
         self.register_native("String.prototype.toUpperCase", native_string_to_upper_case, 0);
@@ -3671,6 +3698,7 @@ impl Interpreter {
 
         // Date methods
         self.register_native("Date.now", native_date_now, 0);
+        self.register_native("performance.now", native_performance_now, 0);
 
         // RegExp methods
         self.register_native("RegExp.prototype.test", native_regexp_test, 1);
@@ -3777,6 +3805,27 @@ fn native_array_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) 
 
     if let Some(arr) = interp.arrays.get(arr_idx as usize) {
         for (i, val) in arr.iter().enumerate() {
+            // Simple equality check (comparing raw values)
+            if val.0 == search_val.0 {
+                return Ok(Value::int(i as i32));
+            }
+        }
+        Ok(Value::int(-1)) // Not found
+    } else {
+        Err("invalid array".to_string())
+    }
+}
+
+/// Array.prototype.lastIndexOf - find last occurrence of element
+fn native_array_last_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "lastIndexOf called on non-array".to_string())?;
+
+    let search_val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+        // Search from end to beginning
+        for (i, val) in arr.iter().enumerate().rev() {
             // Simple equality check (comparing raw values)
             if val.0 == search_val.0 {
                 return Ok(Value::int(i as i32));
@@ -4512,6 +4561,87 @@ fn native_string_char_at(interp: &mut Interpreter, this: Value, args: &[Value]) 
         interp.runtime_strings.push(String::new());
         Ok(Value::string(new_idx))
     }
+}
+
+/// String.prototype.charCodeAt - get character code at index
+fn native_string_char_code_at(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "charCodeAt called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let index = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as usize;
+
+    if let Some(ch) = s.chars().nth(index) {
+        Ok(Value::int(ch as i32))
+    } else {
+        // Return NaN for out of bounds - using 0 for now since we don't have proper NaN
+        Ok(Value::int(0))
+    }
+}
+
+/// String.prototype.lastIndexOf - find last occurrence of substring
+fn native_string_last_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "lastIndexOf called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    // Get search string
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else if let Some(n) = search_val.to_i32() {
+            n.to_string()
+        } else {
+            return Ok(Value::int(-1));
+        }
+    } else {
+        return Ok(Value::int(-1));
+    };
+
+    // Find the last occurrence
+    match s.rfind(&search) {
+        Some(idx) => Ok(Value::int(idx as i32)),
+        None => Ok(Value::int(-1)),
+    }
+}
+
+/// String.fromCharCode - create string from character codes
+fn native_string_from_char_code(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let mut result = String::new();
+    for arg in args {
+        if let Some(code) = arg.to_i32() {
+            if let Some(ch) = char::from_u32(code as u32) {
+                result.push(ch);
+            }
+        }
+    }
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
+}
+
+/// String.fromCodePoint - create string from code points
+fn native_string_from_code_point(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let mut result = String::new();
+    for arg in args {
+        if let Some(code) = arg.to_i32() {
+            if code < 0 {
+                return Err("Invalid code point".to_string());
+            }
+            if let Some(ch) = char::from_u32(code as u32) {
+                result.push(ch);
+            } else {
+                return Err("Invalid code point".to_string());
+            }
+        }
+    }
+    let new_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_idx))
 }
 
 /// String.prototype.indexOf - find substring
@@ -5705,6 +5835,22 @@ impl<'a> JsonParser<'a> {
 /// Note: Due to 31-bit integer limitation, we return milliseconds modulo 2^30
 /// This allows for relative timing within ~12 day windows
 fn native_date_now(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Time error: {}", e))?;
+
+    // Return milliseconds modulo 2^30 (about 12.4 days worth)
+    // This fits in 31-bit signed range and allows relative timing
+    let millis = now.as_millis() as i64;
+    let max_val = 1 << 30; // 2^30 = 1073741824
+
+    Ok(Value::int((millis % max_val) as i32))
+}
+
+/// performance.now - high-resolution time in milliseconds
+fn native_performance_now(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let now = SystemTime::now()

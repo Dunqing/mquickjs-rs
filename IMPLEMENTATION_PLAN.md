@@ -160,7 +160,13 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 339 passing
+**Test Count**: 344 passing
+
+**Additional mquickjs Features (post-Stage 8)**:
+- String.charCodeAt, String.lastIndexOf
+- String.fromCharCode, String.fromCodePoint
+- Array.lastIndexOf
+- performance.now
 
 **Stage 8 CLI Features**:
 - Complete argument parsing (-h, -e, -i, -I, -d, --memory-limit)

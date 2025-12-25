@@ -3648,4 +3648,60 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(6)); // 1 + 0 + 5
     }
+
+    #[test]
+    fn test_string_char_code_at() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'ABC';
+            return s.charCodeAt(0);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(65)); // 'A' = 65
+    }
+
+    #[test]
+    fn test_string_last_index_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'hello hello';
+            return s.lastIndexOf('hello');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(6));
+    }
+
+    #[test]
+    fn test_string_from_char_code() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = String.fromCharCode(65, 66, 67);
+            return s.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_last_index_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 2, 1];
+            return arr.lastIndexOf(2);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_performance_now() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Just verify it returns a number and doesn't throw
+        let result = ctx.eval("
+            var t = performance.now();
+            return t >= 0 ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
 }
