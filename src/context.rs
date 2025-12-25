@@ -4963,4 +4963,92 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
+
+    // ===========================================
+    // Stage 6.18: String/Array locale methods, Object.groupBy
+    // ===========================================
+
+    #[test]
+    fn test_string_normalize() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'hello';
+            return s.normalize().length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_string_locale_compare_equal() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var a = 'abc';
+            return a.localeCompare('abc');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_string_locale_compare_less() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var a = 'abc';
+            return a.localeCompare('xyz');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(-1));
+    }
+
+    #[test]
+    fn test_string_locale_compare_greater() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var a = 'xyz';
+            return a.localeCompare('abc');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_array_to_locale_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return arr.toLocaleString().length;
+        ").unwrap();
+        // "1,2,3" has 5 characters
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_object_group_by() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5, 6];
+            function classify(n) { if (n % 2 === 0) { return 'even'; } return 'odd'; }
+            var grouped = Object.groupBy(arr, classify);
+            return grouped.odd.length;
+        ").unwrap();
+        // 1, 3, 5 are odd
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_object_group_by_even() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5, 6];
+            function classify(n) { if (n % 2 === 0) { return 'even'; } return 'odd'; }
+            var grouped = Object.groupBy(arr, classify);
+            return grouped.even.length;
+        ").unwrap();
+        // 2, 4, 6 are even
+        assert_eq!(result.to_i32(), Some(3));
+    }
 }

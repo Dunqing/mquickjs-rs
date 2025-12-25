@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 447 passing
+**Test Count**: 454 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -598,5 +598,15 @@
   - Number.NaN (uses undefined as proxy)
   - Number.EPSILON (1 for integer-based values)
 - 8 new tests
+
+**Stage 6.18 String/Array Locale Methods, Object.groupBy**:
+- String.prototype.normalize() - returns normalized Unicode form (simplified, returns same string)
+- String.prototype.localeCompare(str) - compare strings lexicographically, returns -1/0/1
+- Array.prototype.toLocaleString() - returns locale-aware string (alias for toString)
+- Object.groupBy(iterable, callback) - ES2024 feature to group array elements by key
+  - Takes array and callback function
+  - Callback returns key for each element
+  - Returns object with arrays grouped by key
+- 7 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise

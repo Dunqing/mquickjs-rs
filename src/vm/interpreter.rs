@@ -3262,6 +3262,7 @@ impl Interpreter {
             "with" => self.get_native_func("Array.prototype.with").unwrap_or(Value::undefined()),
             "toSpliced" => self.get_native_func("Array.prototype.toSpliced").unwrap_or(Value::undefined()),
             "toString" => self.get_native_func("Array.prototype.toString").unwrap_or(Value::undefined()),
+            "toLocaleString" => self.get_native_func("Array.prototype.toLocaleString").unwrap_or(Value::undefined()),
             "keys" => self.get_native_func("Array.prototype.keys").unwrap_or(Value::undefined()),
             "values" => self.get_native_func("Array.prototype.values").unwrap_or(Value::undefined()),
             "entries" => self.get_native_func("Array.prototype.entries").unwrap_or(Value::undefined()),
@@ -3306,6 +3307,8 @@ impl Interpreter {
             "at" => self.get_native_func("String.prototype.at").unwrap_or(Value::undefined()),
             "charCodeAt" => self.get_native_func("String.prototype.charCodeAt").unwrap_or(Value::undefined()),
             "codePointAt" => self.get_native_func("String.prototype.codePointAt").unwrap_or(Value::undefined()),
+            "normalize" => self.get_native_func("String.prototype.normalize").unwrap_or(Value::undefined()),
+            "localeCompare" => self.get_native_func("String.prototype.localeCompare").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3544,6 +3547,7 @@ impl Interpreter {
                     "defineProperty" => self.get_native_func("Object.defineProperty").unwrap_or(Value::undefined()),
                     "preventExtensions" => self.get_native_func("Object.preventExtensions").unwrap_or(Value::undefined()),
                     "isExtensible" => self.get_native_func("Object.isExtensible").unwrap_or(Value::undefined()),
+                    "groupBy" => self.get_native_func("Object.groupBy").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3753,6 +3757,7 @@ impl Interpreter {
         self.register_native("Array.prototype.with", native_array_with, 2);
         self.register_native("Array.prototype.toSpliced", native_array_to_spliced, 2);
         self.register_native("Array.prototype.toString", native_array_to_string, 0);
+        self.register_native("Array.prototype.toLocaleString", native_array_to_locale_string, 0);
         self.register_native("Array.prototype.keys", native_array_keys, 0);
         self.register_native("Array.prototype.values", native_array_values, 0);
         self.register_native("Array.prototype.entries", native_array_entries, 0);
@@ -3828,6 +3833,8 @@ impl Interpreter {
         self.register_native("String.prototype.at", native_string_at, 1);
         self.register_native("String.prototype.charCodeAt", native_string_char_code_at, 1);
         self.register_native("String.prototype.codePointAt", native_string_code_point_at, 1);
+        self.register_native("String.prototype.normalize", native_string_normalize, 0);
+        self.register_native("String.prototype.localeCompare", native_string_locale_compare, 1);
         self.register_native("String.fromCharCode", native_string_from_char_code, 0);
         self.register_native("String.fromCodePoint", native_string_from_code_point, 0);
 
@@ -3905,6 +3912,7 @@ impl Interpreter {
         self.register_native("Object.defineProperty", native_object_define_property, 3);
         self.register_native("Object.preventExtensions", native_object_prevent_extensions, 1);
         self.register_native("Object.isExtensible", native_object_is_extensible, 1);
+        self.register_native("Object.groupBy", native_object_group_by, 2);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -4951,6 +4959,12 @@ fn native_array_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]
     } else {
         Ok(interp.create_runtime_string(String::new()))
     }
+}
+
+/// Array.prototype.toLocaleString - returns locale-aware string representation
+fn native_array_to_locale_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    // In our simplified implementation, toLocaleString is the same as toString
+    native_array_to_string(interp, this, _args)
 }
 
 /// Array.prototype.keys - returns array of indices
@@ -6385,6 +6399,49 @@ fn native_string_from_code_point(interp: &mut Interpreter, _this: Value, args: &
     Ok(Value::string(new_str_idx))
 }
 
+/// String.prototype.normalize - returns Unicode Normalization Form of string
+fn native_string_normalize(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "normalize called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    // In our simplified implementation, just return the string as-is
+    // Full implementation would handle NFC, NFD, NFKC, NFKD forms
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(s);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.localeCompare - compare two strings in locale-aware manner
+fn native_string_locale_compare(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "localeCompare called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let compare_str = if let Some(idx) = args.first().and_then(|v| v.to_string_idx()) {
+        interp.get_string_by_idx(idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = args.first().and_then(|v| v.to_i32()) {
+        n.to_string()
+    } else {
+        String::new()
+    };
+
+    // Simple lexicographic comparison (not true locale-aware)
+    let result = s.cmp(&compare_str);
+    Ok(Value::int(match result {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }))
+}
+
 // =============================================================================
 // Number static methods
 // =============================================================================
@@ -7815,6 +7872,77 @@ fn native_object_is_extensible(interp: &mut Interpreter, _this: Value, args: &[V
     }
     // Non-objects are not extensible
     Ok(Value::bool(false))
+}
+
+/// Object.groupBy - group array elements by key (ES2024)
+fn native_object_group_by(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let items = args.first().copied().unwrap_or(Value::undefined());
+    let callback = args.get(1).copied().unwrap_or(Value::undefined());
+
+    let arr_idx = items.to_array_idx()
+        .ok_or_else(|| "Object.groupBy requires an iterable".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("Object.groupBy requires a callback function".to_string());
+    }
+
+    // Get array elements
+    let elements: Vec<Value> = interp.arrays.get(arr_idx as usize)
+        .cloned()
+        .unwrap_or_default();
+
+    // Group elements by key
+    let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
+
+    for (idx, element) in elements.into_iter().enumerate() {
+        // Call callback with (element, index)
+        let call_args = vec![element, Value::int(idx as i32)];
+        let key_result = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| format!("groupBy callback error: {:?}", e))?;
+
+        // Get key as string
+        let key = if let Some(str_idx) = key_result.to_string_idx() {
+            interp.get_string_by_idx(str_idx)
+                .map(|s| s.to_string())
+                .unwrap_or_default()
+        } else if let Some(n) = key_result.to_i32() {
+            n.to_string()
+        } else if let Some(b) = key_result.to_bool() {
+            b.to_string()
+        } else if key_result.is_undefined() {
+            "undefined".to_string()
+        } else if key_result.is_null() {
+            "null".to_string()
+        } else {
+            "undefined".to_string()
+        };
+
+        // Find or create group
+        let group_idx = groups.iter().position(|(k, _)| k == &key);
+        if let Some(idx) = group_idx {
+            groups[idx].1.push(element);
+        } else {
+            groups.push((key, vec![element]));
+        }
+    }
+
+    // Create result object
+    let mut result_props: Vec<(String, Value)> = Vec::new();
+    for (key, values) in groups {
+        let arr_idx = interp.arrays.len() as u32;
+        interp.arrays.push(values);
+        result_props.push((key, Value::array_idx(arr_idx)));
+    }
+
+    let result_obj = ObjectInstance {
+        constructor: None,
+        properties: result_props,
+        frozen: false,
+        sealed: false,
+    };
+    let result_idx = interp.objects.len() as u32;
+    interp.objects.push(result_obj);
+    Ok(Value::object_idx(result_idx))
 }
 
 // ===========================================
