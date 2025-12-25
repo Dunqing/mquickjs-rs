@@ -2147,6 +2147,133 @@ mod tests {
         assert!(result.is_string());
     }
 
+    #[test]
+    fn test_string_concat_method() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.concat with multiple args
+        let result = ctx.eval("
+            var s = \"hello\" + \"\";
+            var w = \"\" + \" world\";
+            var e = \"\" + \"!\";
+            return s.concat(w, e);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_repeat() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.repeat
+        let result = ctx.eval("
+            var s = \"ab\" + \"\";
+            return s.repeat(3);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_starts_with() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.startsWith - true case
+        let result = ctx.eval("
+            var s = \"hello\" + \" world\";
+            var prefix = \"hel\" + \"lo\";
+            return s.startsWith(prefix);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // String.prototype.startsWith - false case
+        let result = ctx.eval("
+            var s = \"hello\" + \" world\";
+            var prefix = \"wor\" + \"ld\";
+            return s.startsWith(prefix);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_string_ends_with() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.endsWith - true case
+        let result = ctx.eval("
+            var s = \"hello\" + \" world\";
+            var suffix = \"wor\" + \"ld\";
+            return s.endsWith(suffix);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // String.prototype.endsWith - false case
+        let result = ctx.eval("
+            var s = \"hello\" + \" world\";
+            var suffix = \"hel\" + \"lo\";
+            return s.endsWith(suffix);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_string_pad_start() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.padStart with spaces (default)
+        let result = ctx.eval("
+            var s = \"5\" + \"\";
+            return s.padStart(3).length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_string_pad_end() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.padEnd with spaces (default)
+        let result = ctx.eval("
+            var s = \"5\" + \"\";
+            return s.padEnd(3).length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_string_replace() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.replace - replace first occurrence
+        let result = ctx.eval("
+            var s = \"foo\" + \" bar foo\";
+            var search = \"f\" + \"oo\";
+            var rep = \"b\" + \"az\";
+            return s.replace(search, rep);
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_string_includes() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // String.prototype.includes - true case
+        let result = ctx.eval("
+            var s = \"hello\" + \" world\";
+            var search = \"lo w\" + \"\";
+            return s.includes(search);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // String.prototype.includes - false case
+        let result = ctx.eval("
+            var s = \"hello\" + \" world\";
+            var search = \"xyz\" + \"\";
+            return s.includes(search);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
     // =========================================================================
     // Number static method tests
     // =========================================================================

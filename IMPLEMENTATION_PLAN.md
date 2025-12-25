@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 290 passing
+**Test Count**: 298 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -305,8 +305,16 @@
 - String.prototype.toLowerCase() - convert to lowercase
 - String.prototype.trim() - remove whitespace from both ends
 - String.prototype.split(separator) - split into array
+- String.prototype.concat(...args) - concatenate strings
+- String.prototype.repeat(count) - repeat string n times
+- String.prototype.startsWith(search, position) - check prefix
+- String.prototype.endsWith(search, endPosition) - check suffix
+- String.prototype.padStart(targetLength, padString) - pad from start
+- String.prototype.padEnd(targetLength, padString) - pad from end
+- String.prototype.replace(search, replacement) - replace first occurrence
+- String.prototype.includes(search, position) - check contains
 - Note: Methods work on runtime strings (from concatenation); compile-time literal support pending
-- 11 String method tests
+- 19 String method tests
 
 **Stage 5.5 Number Static Methods**:
 - BUILTIN_NUMBER constant for Number object
@@ -396,4 +404,4 @@
 - Array.prototype.includes(value) - check if array contains value
 - 12 Array higher-order function tests
 
-**Next Action**: Implement RegExp or more String methods
+**Next Action**: Implement RegExp (Stage 6.4) or TypedArray (Stage 6.5)

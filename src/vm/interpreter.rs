@@ -2885,6 +2885,14 @@ impl Interpreter {
             "toLowerCase" => self.get_native_func("String.prototype.toLowerCase").unwrap_or(Value::undefined()),
             "trim" => self.get_native_func("String.prototype.trim").unwrap_or(Value::undefined()),
             "split" => self.get_native_func("String.prototype.split").unwrap_or(Value::undefined()),
+            "concat" => self.get_native_func("String.prototype.concat").unwrap_or(Value::undefined()),
+            "repeat" => self.get_native_func("String.prototype.repeat").unwrap_or(Value::undefined()),
+            "startsWith" => self.get_native_func("String.prototype.startsWith").unwrap_or(Value::undefined()),
+            "endsWith" => self.get_native_func("String.prototype.endsWith").unwrap_or(Value::undefined()),
+            "padStart" => self.get_native_func("String.prototype.padStart").unwrap_or(Value::undefined()),
+            "padEnd" => self.get_native_func("String.prototype.padEnd").unwrap_or(Value::undefined()),
+            "replace" => self.get_native_func("String.prototype.replace").unwrap_or(Value::undefined()),
+            "includes" => self.get_native_func("String.prototype.includes").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3151,6 +3159,14 @@ impl Interpreter {
         self.register_native("String.prototype.toLowerCase", native_string_to_lower_case, 0);
         self.register_native("String.prototype.trim", native_string_trim, 0);
         self.register_native("String.prototype.split", native_string_split, 0);
+        self.register_native("String.prototype.concat", native_string_concat, 0);
+        self.register_native("String.prototype.repeat", native_string_repeat, 1);
+        self.register_native("String.prototype.startsWith", native_string_starts_with, 1);
+        self.register_native("String.prototype.endsWith", native_string_ends_with, 1);
+        self.register_native("String.prototype.padStart", native_string_pad_start, 1);
+        self.register_native("String.prototype.padEnd", native_string_pad_end, 1);
+        self.register_native("String.prototype.replace", native_string_replace, 2);
+        self.register_native("String.prototype.includes", native_string_includes, 1);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -3986,6 +4002,288 @@ fn native_string_split(interp: &mut Interpreter, this: Value, args: &[Value]) ->
     let arr_idx = interp.arrays.len() as u32;
     interp.arrays.push(parts);
     Ok(Value::array_idx(arr_idx))
+}
+
+/// String.prototype.concat - concatenate strings
+fn native_string_concat(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "concat called on non-string".to_string())?;
+
+    let mut result = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    // Concatenate all arguments
+    for arg in args {
+        if let Some(arg_idx) = arg.to_string_idx() {
+            if let Some(arg_str) = interp.get_string_by_idx(arg_idx) {
+                result.push_str(arg_str);
+            }
+        } else if let Some(n) = arg.to_i32() {
+            result.push_str(&n.to_string());
+        } else if arg.is_undefined() {
+            result.push_str("undefined");
+        } else if arg.is_null() {
+            result.push_str("null");
+        } else if arg.is_bool() {
+            result.push_str(if arg.to_bool().unwrap_or(false) { "true" } else { "false" });
+        }
+    }
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.repeat - repeat string n times
+fn native_string_repeat(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "repeat called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let count = args.get(0)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0)
+        .max(0) as usize;
+
+    let result = s.repeat(count);
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.startsWith - check if string starts with search string
+fn native_string_starts_with(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "startsWith called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else {
+            return Ok(Value::bool(false));
+        }
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    // Optional position argument
+    let position = args.get(1)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0)
+        .max(0) as usize;
+
+    if position >= s.len() {
+        return Ok(Value::bool(search.is_empty()));
+    }
+
+    Ok(Value::bool(s[position..].starts_with(&search)))
+}
+
+/// String.prototype.endsWith - check if string ends with search string
+fn native_string_ends_with(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "endsWith called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else {
+            return Ok(Value::bool(false));
+        }
+    } else {
+        return Ok(Value::bool(false));
+    };
+
+    // Optional end position argument
+    let end_position = args.get(1)
+        .and_then(|v| v.to_i32())
+        .map(|v| v.max(0) as usize)
+        .unwrap_or(s.len());
+
+    let end = end_position.min(s.len());
+
+    if search.len() > end {
+        return Ok(Value::bool(false));
+    }
+
+    Ok(Value::bool(s[..end].ends_with(&search)))
+}
+
+/// String.prototype.padStart - pad string from start to target length
+fn native_string_pad_start(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "padStart called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let target_length = args.get(0)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0)
+        .max(0) as usize;
+
+    if s.len() >= target_length {
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(s);
+        return Ok(Value::string(new_str_idx));
+    }
+
+    let pad_string = if let Some(pad_val) = args.get(1) {
+        if let Some(pad_idx) = pad_val.to_string_idx() {
+            interp.get_string_by_idx(pad_idx).unwrap_or(" ").to_string()
+        } else {
+            " ".to_string()
+        }
+    } else {
+        " ".to_string()
+    };
+
+    if pad_string.is_empty() {
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(s);
+        return Ok(Value::string(new_str_idx));
+    }
+
+    let pad_needed = target_length - s.len();
+    let full_pads = pad_needed / pad_string.len();
+    let partial_pad = pad_needed % pad_string.len();
+
+    let mut result = pad_string.repeat(full_pads);
+    result.push_str(&pad_string[..partial_pad]);
+    result.push_str(&s);
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.padEnd - pad string from end to target length
+fn native_string_pad_end(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "padEnd called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let target_length = args.get(0)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0)
+        .max(0) as usize;
+
+    if s.len() >= target_length {
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(s);
+        return Ok(Value::string(new_str_idx));
+    }
+
+    let pad_string = if let Some(pad_val) = args.get(1) {
+        if let Some(pad_idx) = pad_val.to_string_idx() {
+            interp.get_string_by_idx(pad_idx).unwrap_or(" ").to_string()
+        } else {
+            " ".to_string()
+        }
+    } else {
+        " ".to_string()
+    };
+
+    if pad_string.is_empty() {
+        let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+        interp.runtime_strings.push(s);
+        return Ok(Value::string(new_str_idx));
+    }
+
+    let pad_needed = target_length - s.len();
+    let full_pads = pad_needed / pad_string.len();
+    let partial_pad = pad_needed % pad_string.len();
+
+    let mut result = s;
+    result.push_str(&pad_string.repeat(full_pads));
+    result.push_str(&pad_string[..partial_pad]);
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.replace - replace first occurrence of search with replacement
+fn native_string_replace(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "replace called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
+
+    let replacement = if let Some(replace_val) = args.get(1) {
+        if let Some(replace_idx) = replace_val.to_string_idx() {
+            interp.get_string_by_idx(replace_idx).unwrap_or("").to_string()
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
+
+    // Replace first occurrence only
+    let result = s.replacen(&search, &replacement, 1);
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.includes - check if string contains search string
+fn native_string_includes(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "includes called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else {
+            return Ok(Value::bool(false));
+        }
+    } else {
+        return Ok(Value::bool(true)); // includes() with no args returns true
+    };
+
+    // Optional position argument
+    let position = args.get(1)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0)
+        .max(0) as usize;
+
+    if position >= s.len() {
+        return Ok(Value::bool(search.is_empty()));
+    }
+
+    Ok(Value::bool(s[position..].contains(&search)))
 }
 
 // =============================================================================
