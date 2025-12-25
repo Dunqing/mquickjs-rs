@@ -38,6 +38,24 @@ pub const BUILTIN_OBJECT: u32 = 12;
 pub const BUILTIN_ARRAY: u32 = 13;
 /// RegExp object index
 pub const BUILTIN_REGEXP: u32 = 14;
+/// Uint8Array constructor index
+pub const BUILTIN_UINT8_ARRAY: u32 = 15;
+/// Int8Array constructor index
+pub const BUILTIN_INT8_ARRAY: u32 = 16;
+/// Uint16Array constructor index
+pub const BUILTIN_UINT16_ARRAY: u32 = 17;
+/// Int16Array constructor index
+pub const BUILTIN_INT16_ARRAY: u32 = 18;
+/// Uint32Array constructor index
+pub const BUILTIN_UINT32_ARRAY: u32 = 19;
+/// Int32Array constructor index
+pub const BUILTIN_INT32_ARRAY: u32 = 20;
+/// Float32Array constructor index
+pub const BUILTIN_FLOAT32_ARRAY: u32 = 21;
+/// Float64Array constructor index
+pub const BUILTIN_FLOAT64_ARRAY: u32 = 22;
+/// Uint8ClampedArray constructor index
+pub const BUILTIN_UINT8_CLAMPED_ARRAY: u32 = 23;
 
 /// Native function signature
 ///
@@ -385,6 +403,8 @@ pub struct Interpreter {
     error_objects: Vec<ErrorObject>,
     /// RegExp objects created during execution
     regex_objects: Vec<RegExpObject>,
+    /// TypedArray objects created during execution
+    typed_arrays: Vec<TypedArrayObject>,
     /// Current compile-time string constants (set during bytecode execution)
     /// Used by native functions to look up compile-time strings
     current_string_constants: Option<*const Vec<String>>,
@@ -428,6 +448,199 @@ impl std::fmt::Debug for RegExpObject {
     }
 }
 
+/// TypedArray element kind
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypedArrayKind {
+    Uint8,
+    Int8,
+    Uint16,
+    Int16,
+    Uint32,
+    Int32,
+    Float32,
+    Float64,
+    Uint8Clamped,
+}
+
+impl TypedArrayKind {
+    /// Get the byte size per element
+    pub fn bytes_per_element(&self) -> usize {
+        match self {
+            TypedArrayKind::Uint8 | TypedArrayKind::Int8 | TypedArrayKind::Uint8Clamped => 1,
+            TypedArrayKind::Uint16 | TypedArrayKind::Int16 => 2,
+            TypedArrayKind::Uint32 | TypedArrayKind::Int32 | TypedArrayKind::Float32 => 4,
+            TypedArrayKind::Float64 => 8,
+        }
+    }
+
+    /// Get the name of this TypedArray type
+    pub fn name(&self) -> &'static str {
+        match self {
+            TypedArrayKind::Uint8 => "Uint8Array",
+            TypedArrayKind::Int8 => "Int8Array",
+            TypedArrayKind::Uint16 => "Uint16Array",
+            TypedArrayKind::Int16 => "Int16Array",
+            TypedArrayKind::Uint32 => "Uint32Array",
+            TypedArrayKind::Int32 => "Int32Array",
+            TypedArrayKind::Float32 => "Float32Array",
+            TypedArrayKind::Float64 => "Float64Array",
+            TypedArrayKind::Uint8Clamped => "Uint8ClampedArray",
+        }
+    }
+}
+
+/// TypedArray object storage
+#[derive(Debug, Clone)]
+pub struct TypedArrayObject {
+    /// The kind of typed array
+    pub kind: TypedArrayKind,
+    /// The underlying data as bytes
+    pub data: Vec<u8>,
+    /// Length in elements (not bytes)
+    pub length: usize,
+}
+
+impl TypedArrayObject {
+    /// Create a new TypedArray with the given kind and length
+    pub fn new(kind: TypedArrayKind, length: usize) -> Self {
+        let byte_length = length * kind.bytes_per_element();
+        TypedArrayObject {
+            kind,
+            data: vec![0u8; byte_length],
+            length,
+        }
+    }
+
+    /// Get element at index as i32 (for use with Value::int)
+    pub fn get(&self, index: usize) -> Option<i32> {
+        if index >= self.length {
+            return None;
+        }
+        let byte_offset = index * self.kind.bytes_per_element();
+        Some(match self.kind {
+            TypedArrayKind::Uint8 | TypedArrayKind::Uint8Clamped => {
+                self.data[byte_offset] as i32
+            }
+            TypedArrayKind::Int8 => {
+                self.data[byte_offset] as i8 as i32
+            }
+            TypedArrayKind::Uint16 => {
+                let bytes = [self.data[byte_offset], self.data[byte_offset + 1]];
+                u16::from_le_bytes(bytes) as i32
+            }
+            TypedArrayKind::Int16 => {
+                let bytes = [self.data[byte_offset], self.data[byte_offset + 1]];
+                i16::from_le_bytes(bytes) as i32
+            }
+            TypedArrayKind::Uint32 => {
+                let bytes = [
+                    self.data[byte_offset],
+                    self.data[byte_offset + 1],
+                    self.data[byte_offset + 2],
+                    self.data[byte_offset + 3],
+                ];
+                // Clamp to 31-bit signed int range
+                let val = u32::from_le_bytes(bytes);
+                if val > 0x7FFFFFFF {
+                    0x7FFFFFFF_i32
+                } else {
+                    val as i32
+                }
+            }
+            TypedArrayKind::Int32 => {
+                let bytes = [
+                    self.data[byte_offset],
+                    self.data[byte_offset + 1],
+                    self.data[byte_offset + 2],
+                    self.data[byte_offset + 3],
+                ];
+                i32::from_le_bytes(bytes)
+            }
+            TypedArrayKind::Float32 => {
+                let bytes = [
+                    self.data[byte_offset],
+                    self.data[byte_offset + 1],
+                    self.data[byte_offset + 2],
+                    self.data[byte_offset + 3],
+                ];
+                f32::from_le_bytes(bytes) as i32
+            }
+            TypedArrayKind::Float64 => {
+                let bytes = [
+                    self.data[byte_offset],
+                    self.data[byte_offset + 1],
+                    self.data[byte_offset + 2],
+                    self.data[byte_offset + 3],
+                    self.data[byte_offset + 4],
+                    self.data[byte_offset + 5],
+                    self.data[byte_offset + 6],
+                    self.data[byte_offset + 7],
+                ];
+                f64::from_le_bytes(bytes) as i32
+            }
+        })
+    }
+
+    /// Set element at index from i32 value
+    pub fn set(&mut self, index: usize, value: i32) -> bool {
+        if index >= self.length {
+            return false;
+        }
+        let byte_offset = index * self.kind.bytes_per_element();
+        match self.kind {
+            TypedArrayKind::Uint8 => {
+                self.data[byte_offset] = value as u8;
+            }
+            TypedArrayKind::Uint8Clamped => {
+                // Clamp to 0-255
+                let clamped = if value < 0 { 0 } else if value > 255 { 255 } else { value as u8 };
+                self.data[byte_offset] = clamped;
+            }
+            TypedArrayKind::Int8 => {
+                self.data[byte_offset] = value as i8 as u8;
+            }
+            TypedArrayKind::Uint16 => {
+                let bytes = (value as u16).to_le_bytes();
+                self.data[byte_offset] = bytes[0];
+                self.data[byte_offset + 1] = bytes[1];
+            }
+            TypedArrayKind::Int16 => {
+                let bytes = (value as i16).to_le_bytes();
+                self.data[byte_offset] = bytes[0];
+                self.data[byte_offset + 1] = bytes[1];
+            }
+            TypedArrayKind::Uint32 => {
+                let bytes = (value as u32).to_le_bytes();
+                self.data[byte_offset] = bytes[0];
+                self.data[byte_offset + 1] = bytes[1];
+                self.data[byte_offset + 2] = bytes[2];
+                self.data[byte_offset + 3] = bytes[3];
+            }
+            TypedArrayKind::Int32 => {
+                let bytes = value.to_le_bytes();
+                self.data[byte_offset] = bytes[0];
+                self.data[byte_offset + 1] = bytes[1];
+                self.data[byte_offset + 2] = bytes[2];
+                self.data[byte_offset + 3] = bytes[3];
+            }
+            TypedArrayKind::Float32 => {
+                let bytes = (value as f32).to_le_bytes();
+                self.data[byte_offset] = bytes[0];
+                self.data[byte_offset + 1] = bytes[1];
+                self.data[byte_offset + 2] = bytes[2];
+                self.data[byte_offset + 3] = bytes[3];
+            }
+            TypedArrayKind::Float64 => {
+                let bytes = (value as f64).to_le_bytes();
+                for (i, &b) in bytes.iter().enumerate() {
+                    self.data[byte_offset + i] = b;
+                }
+            }
+        }
+        true
+    }
+}
+
 impl Interpreter {
     /// Default stack capacity
     const DEFAULT_STACK_SIZE: usize = 1024;
@@ -450,6 +663,7 @@ impl Interpreter {
             native_functions: Vec::new(),
             error_objects: Vec::new(),
             regex_objects: Vec::new(),
+            typed_arrays: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
         };
@@ -473,6 +687,7 @@ impl Interpreter {
             native_functions: Vec::new(),
             error_objects: Vec::new(),
             regex_objects: Vec::new(),
+            typed_arrays: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
         };
@@ -1737,6 +1952,62 @@ impl Interpreter {
                             }
                             continue;
                         }
+
+                        // Check if this is a TypedArray constructor
+                        let typed_array_kind = match builtin_idx {
+                            BUILTIN_UINT8_ARRAY => Some(TypedArrayKind::Uint8),
+                            BUILTIN_INT8_ARRAY => Some(TypedArrayKind::Int8),
+                            BUILTIN_UINT16_ARRAY => Some(TypedArrayKind::Uint16),
+                            BUILTIN_INT16_ARRAY => Some(TypedArrayKind::Int16),
+                            BUILTIN_UINT32_ARRAY => Some(TypedArrayKind::Uint32),
+                            BUILTIN_INT32_ARRAY => Some(TypedArrayKind::Int32),
+                            BUILTIN_FLOAT32_ARRAY => Some(TypedArrayKind::Float32),
+                            BUILTIN_FLOAT64_ARRAY => Some(TypedArrayKind::Float64),
+                            BUILTIN_UINT8_CLAMPED_ARRAY => Some(TypedArrayKind::Uint8Clamped),
+                            _ => None,
+                        };
+
+                        if let Some(kind) = typed_array_kind {
+                            // Get length from first argument
+                            let length = if let Some(len_val) = args.first() {
+                                if let Some(n) = len_val.to_i32() {
+                                    if n < 0 {
+                                        return Err(InterpreterError::TypeError(
+                                            "Invalid typed array length".to_string(),
+                                        ));
+                                    }
+                                    n as usize
+                                } else if len_val.is_array() {
+                                    // Initialize from array
+                                    if let Some(arr_idx) = len_val.to_array_idx() {
+                                        if let Some(arr) = self.get_array(arr_idx) {
+                                            let length = arr.len();
+                                            let mut typed_arr = TypedArrayObject::new(kind, length);
+                                            for (i, &val) in arr.iter().enumerate() {
+                                                let v = val.to_i32().unwrap_or(0);
+                                                typed_arr.set(i, v);
+                                            }
+                                            let typed_arr_idx = self.typed_arrays.len() as u32;
+                                            self.typed_arrays.push(typed_arr);
+                                            self.stack.push(Value::typed_array_object(typed_arr_idx));
+                                            continue;
+                                        }
+                                    }
+                                    0
+                                } else {
+                                    0
+                                }
+                            } else {
+                                0
+                            };
+
+                            // Create the typed array
+                            let typed_arr = TypedArrayObject::new(kind, length);
+                            let typed_arr_idx = self.typed_arrays.len() as u32;
+                            self.typed_arrays.push(typed_arr);
+                            self.stack.push(Value::typed_array_object(typed_arr_idx));
+                            continue;
+                        }
                     }
 
                     // Create a new object for 'this', storing the constructor reference for instanceof
@@ -2022,6 +2293,15 @@ impl Interpreter {
                         "SyntaxError" => Some(Value::builtin_object(BUILTIN_SYNTAX_ERROR)),
                         "RangeError" => Some(Value::builtin_object(BUILTIN_RANGE_ERROR)),
                         "RegExp" => Some(Value::builtin_object(BUILTIN_REGEXP)),
+                        "Uint8Array" => Some(Value::builtin_object(BUILTIN_UINT8_ARRAY)),
+                        "Int8Array" => Some(Value::builtin_object(BUILTIN_INT8_ARRAY)),
+                        "Uint16Array" => Some(Value::builtin_object(BUILTIN_UINT16_ARRAY)),
+                        "Int16Array" => Some(Value::builtin_object(BUILTIN_INT16_ARRAY)),
+                        "Uint32Array" => Some(Value::builtin_object(BUILTIN_UINT32_ARRAY)),
+                        "Int32Array" => Some(Value::builtin_object(BUILTIN_INT32_ARRAY)),
+                        "Float32Array" => Some(Value::builtin_object(BUILTIN_FLOAT32_ARRAY)),
+                        "Float64Array" => Some(Value::builtin_object(BUILTIN_FLOAT64_ARRAY)),
+                        "Uint8ClampedArray" => Some(Value::builtin_object(BUILTIN_UINT8_CLAMPED_ARRAY)),
                         _ => self.get_native_func(name),
                     };
 
@@ -2175,6 +2455,25 @@ impl Interpreter {
                         }
                     }
 
+                    // Handle TypedArrays
+                    if let Some(typed_arr_idx) = obj.to_typed_array_object_idx() {
+                        // Try string key for TypedArray methods
+                        if let Some(str_idx) = idx.to_string_idx() {
+                            if let Some(key) = self.get_string_by_idx(str_idx) {
+                                let val = self.get_typed_array_property(typed_arr_idx, key);
+                                self.stack.push(val);
+                                continue;
+                            }
+                        }
+                        // Numeric index
+                        let index = idx.to_i32().unwrap_or(0) as usize;
+                        if let Some(typed_arr) = self.typed_arrays.get(typed_arr_idx as usize) {
+                            let val = typed_arr.get(index).map(Value::int).unwrap_or(Value::undefined());
+                            self.stack.push(val);
+                            continue;
+                        }
+                    }
+
                     // Handle strings
                     if let Some(str_idx) = obj.to_string_idx() {
                         if let Some(n) = idx.to_i32() {
@@ -2220,15 +2519,25 @@ impl Interpreter {
                     let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
                     let arr = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
 
-                    // Get the array
-                    let arr_idx = arr.to_array_idx().ok_or_else(|| {
-                        InterpreterError::TypeError("cannot set property of non-array".to_string())
-                    })?;
-
                     // Get the index
                     let index = idx.to_i32().ok_or_else(|| {
                         InterpreterError::TypeError("array index must be a number".to_string())
                     })? as usize;
+
+                    // Handle TypedArrays
+                    if let Some(typed_arr_idx) = arr.to_typed_array_object_idx() {
+                        let int_val = val.to_i32().unwrap_or(0);
+                        if let Some(typed_arr) = self.typed_arrays.get_mut(typed_arr_idx as usize) {
+                            typed_arr.set(index, int_val);
+                        }
+                        self.stack.push(val);
+                        continue;
+                    }
+
+                    // Handle regular arrays
+                    let arr_idx = arr.to_array_idx().ok_or_else(|| {
+                        InterpreterError::TypeError("cannot set property of non-array".to_string())
+                    })?;
 
                     // Set the element, extending if necessary
                     let array = self.get_array_mut(arr_idx).ok_or_else(|| {
@@ -2276,6 +2585,10 @@ impl Interpreter {
                         // RegExp object property access
                         let val = self.get_regexp_property(regex_idx, prop_name);
                         self.stack.push(val);
+                    } else if let Some(typed_arr_idx) = obj.to_typed_array_object_idx() {
+                        // TypedArray object property access
+                        let val = self.get_typed_array_property(typed_arr_idx, prop_name);
+                        self.stack.push(val);
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         // Get property from regular object
                         let val = self.object_get_property(obj_idx, prop_name);
@@ -2314,6 +2627,8 @@ impl Interpreter {
                         self.get_array_property(obj, prop_name)
                     } else if let Some(regex_idx) = obj.to_regexp_object_idx() {
                         self.get_regexp_property(regex_idx, prop_name)
+                    } else if let Some(typed_arr_idx) = obj.to_typed_array_object_idx() {
+                        self.get_typed_array_property(typed_arr_idx, prop_name)
                     } else if let Some(obj_idx) = obj.to_object_idx() {
                         self.object_get_property(obj_idx, prop_name)
                     } else if obj.is_string() {
@@ -3108,6 +3423,36 @@ impl Interpreter {
                     // For now, just return undefined
                     Value::undefined()
                 }
+                _ => Value::undefined(),
+            }
+        } else {
+            Value::undefined()
+        }
+    }
+
+    /// Get a property from a TypedArray object
+    fn get_typed_array_property(&self, typed_arr_idx: u32, prop_name: &str) -> Value {
+        if let Some(typed_arr) = self.typed_arrays.get(typed_arr_idx as usize) {
+            match prop_name {
+                "length" => Value::int(typed_arr.length as i32),
+                "byteLength" => Value::int(typed_arr.data.len() as i32),
+                "BYTES_PER_ELEMENT" => Value::int(typed_arr.kind.bytes_per_element() as i32),
+                "set" => self.get_native_func("TypedArray.prototype.set").unwrap_or(Value::undefined()),
+                "subarray" => self.get_native_func("TypedArray.prototype.subarray").unwrap_or(Value::undefined()),
+                "slice" => self.get_native_func("TypedArray.prototype.slice").unwrap_or(Value::undefined()),
+                "fill" => self.get_native_func("TypedArray.prototype.fill").unwrap_or(Value::undefined()),
+                "indexOf" => self.get_native_func("TypedArray.prototype.indexOf").unwrap_or(Value::undefined()),
+                "includes" => self.get_native_func("TypedArray.prototype.includes").unwrap_or(Value::undefined()),
+                "join" => self.get_native_func("TypedArray.prototype.join").unwrap_or(Value::undefined()),
+                "reverse" => self.get_native_func("TypedArray.prototype.reverse").unwrap_or(Value::undefined()),
+                "forEach" => self.get_native_func("TypedArray.prototype.forEach").unwrap_or(Value::undefined()),
+                "map" => self.get_native_func("TypedArray.prototype.map").unwrap_or(Value::undefined()),
+                "filter" => self.get_native_func("TypedArray.prototype.filter").unwrap_or(Value::undefined()),
+                "reduce" => self.get_native_func("TypedArray.prototype.reduce").unwrap_or(Value::undefined()),
+                "find" => self.get_native_func("TypedArray.prototype.find").unwrap_or(Value::undefined()),
+                "findIndex" => self.get_native_func("TypedArray.prototype.findIndex").unwrap_or(Value::undefined()),
+                "some" => self.get_native_func("TypedArray.prototype.some").unwrap_or(Value::undefined()),
+                "every" => self.get_native_func("TypedArray.prototype.every").unwrap_or(Value::undefined()),
                 _ => Value::undefined(),
             }
         } else {
@@ -5099,6 +5444,19 @@ fn format_value(interp: &Interpreter, val: Value) -> String {
             }
         } else {
             "Error".to_string()
+        }
+    } else if val.is_typed_array_object() {
+        if let Some(typed_arr_idx) = val.to_typed_array_object_idx() {
+            if let Some(typed_arr) = interp.typed_arrays.get(typed_arr_idx as usize) {
+                let items: Vec<String> = (0..typed_arr.length)
+                    .map(|i| typed_arr.get(i).map_or("undefined".to_string(), |v| v.to_string()))
+                    .collect();
+                format!("{}({})[{}]", typed_arr.kind.name(), typed_arr.length, items.join(", "))
+            } else {
+                "[TypedArray]".to_string()
+            }
+        } else {
+            "[TypedArray]".to_string()
         }
     } else if val.is_object() {
         "[object Object]".to_string()

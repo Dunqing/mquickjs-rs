@@ -3562,4 +3562,143 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1)); // First underscore at position 1
     }
+
+    // ===========================================
+    // TypedArray Tests
+    // ===========================================
+
+    #[test]
+    fn test_uint8_array_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Uint8Array(4);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(4));
+    }
+
+    #[test]
+    fn test_int32_array_constructor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int32Array(3);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_typed_array_set_get() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Uint8Array(3);
+            arr[0] = 10;
+            arr[1] = 20;
+            arr[2] = 30;
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(60));
+    }
+
+    #[test]
+    fn test_typed_array_byte_length() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int32Array(4);
+            return arr.byteLength;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(16)); // 4 elements * 4 bytes each
+    }
+
+    #[test]
+    fn test_typed_array_bytes_per_element() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr1 = new Uint8Array(1);
+            var arr2 = new Int16Array(1);
+            var arr4 = new Float32Array(1);
+            var arr8 = new Float64Array(1);
+            return arr1.BYTES_PER_ELEMENT + arr2.BYTES_PER_ELEMENT + arr4.BYTES_PER_ELEMENT + arr8.BYTES_PER_ELEMENT;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(15)); // 1 + 2 + 4 + 8
+    }
+
+    #[test]
+    fn test_uint8_clamped_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Uint8ClampedArray(3);
+            arr[0] = 300;
+            arr[1] = 0 - 50;
+            arr[2] = 100;
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(355)); // 255 + 0 + 100
+    }
+
+    #[test]
+    fn test_int8_array_signed() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int8Array(2);
+            arr[0] = 127;
+            arr[1] = 0 - 128;
+            return arr[0] + arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(-1)); // 127 + (-128)
+    }
+
+    #[test]
+    fn test_float64_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Float64Array(2);
+            arr[0] = 10;
+            arr[1] = 5;
+            return arr[0] + arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(15));
+    }
+
+    #[test]
+    fn test_typed_array_out_of_bounds() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Uint8Array(3);
+            var val = arr[10];
+            return val === undefined ? 1 : 0;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_typed_array_from_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int32Array([1, 2, 3, 4, 5]);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_typed_array_from_array_values() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Int32Array([10, 20, 30]);
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(60));
+    }
 }
