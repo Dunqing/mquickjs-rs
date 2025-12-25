@@ -38,6 +38,8 @@ pub const BUILTIN_OBJECT: u32 = 12;
 pub const BUILTIN_ARRAY: u32 = 13;
 /// RegExp object index
 pub const BUILTIN_REGEXP: u32 = 14;
+/// globalThis object index
+pub const BUILTIN_GLOBAL_THIS: u32 = 15;
 
 /// Native function signature
 ///
@@ -596,7 +598,11 @@ impl Interpreter {
                 }
             }
         }
-        Value::undefined()
+        // Fallback to Object.prototype methods
+        match key {
+            "hasOwnProperty" => self.get_native_func("Object.prototype.hasOwnProperty").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
     }
 
     /// Set a property on an object
@@ -2022,6 +2028,7 @@ impl Interpreter {
                         "SyntaxError" => Some(Value::builtin_object(BUILTIN_SYNTAX_ERROR)),
                         "RangeError" => Some(Value::builtin_object(BUILTIN_RANGE_ERROR)),
                         "RegExp" => Some(Value::builtin_object(BUILTIN_REGEXP)),
+                        "globalThis" => Some(Value::builtin_object(BUILTIN_GLOBAL_THIS)),
                         _ => self.get_native_func(name),
                     };
 
@@ -3152,6 +3159,29 @@ impl Interpreter {
                     _ => Value::undefined(),
                 }
             }
+            BUILTIN_GLOBAL_THIS => {
+                // globalThis provides access to global builtins
+                match prop_name {
+                    "undefined" => Value::undefined(),
+                    "NaN" => Value::int(0),
+                    "Infinity" => Value::int(i32::MAX),
+                    "Math" => Value::builtin_object(BUILTIN_MATH),
+                    "JSON" => Value::builtin_object(BUILTIN_JSON),
+                    "Number" => Value::builtin_object(BUILTIN_NUMBER),
+                    "Boolean" => Value::builtin_object(BUILTIN_BOOLEAN),
+                    "String" => Value::builtin_object(BUILTIN_STRING),
+                    "Object" => Value::builtin_object(BUILTIN_OBJECT),
+                    "Array" => Value::builtin_object(BUILTIN_ARRAY),
+                    "console" => Value::builtin_object(BUILTIN_CONSOLE),
+                    "Date" => Value::builtin_object(BUILTIN_DATE),
+                    "Error" => Value::builtin_object(BUILTIN_ERROR),
+                    "RegExp" => Value::builtin_object(BUILTIN_REGEXP),
+                    "globalThis" => Value::builtin_object(BUILTIN_GLOBAL_THIS),
+                    "parseInt" => self.get_native_func("parseInt").unwrap_or(Value::undefined()),
+                    "isNaN" => self.get_native_func("isNaN").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
             _ => Value::undefined(),
         }
     }
@@ -3356,6 +3386,8 @@ impl Interpreter {
         self.register_native("Object.keys", native_object_keys, 1);
         self.register_native("Object.values", native_object_values, 1);
         self.register_native("Object.entries", native_object_entries, 1);
+        // Object.prototype methods
+        self.register_native("Object.prototype.hasOwnProperty", native_object_has_own_property, 1);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -5576,6 +5608,48 @@ fn native_object_entries(interp: &mut Interpreter, _this: Value, args: &[Value])
     let arr_idx = interp.arrays.len() as u32;
     interp.arrays.push(Vec::new());
     Ok(Value::array_idx(arr_idx))
+}
+
+/// Object.prototype.hasOwnProperty - check if object has own property
+fn native_object_has_own_property(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    // Get the property name to check
+    let prop_name = args.get(0)
+        .and_then(|v| v.to_string_idx())
+        .and_then(|idx| interp.get_string_by_idx(idx).map(|s| s.to_string()));
+
+    let prop_name = match prop_name {
+        Some(s) => s,
+        None => return Ok(Value::bool(false)),
+    };
+
+    // Check if 'this' is an object and has the property
+    if let Some(obj_idx) = this.to_object_idx() {
+        if let Some(obj) = interp.get_object(obj_idx) {
+            for (k, _) in obj.properties.iter() {
+                if k == &prop_name {
+                    return Ok(Value::bool(true));
+                }
+            }
+        }
+        return Ok(Value::bool(false));
+    }
+
+    // Check if 'this' is an array
+    if let Some(arr_idx) = this.to_array_idx() {
+        if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+            // Check numeric indices
+            if let Ok(idx) = prop_name.parse::<usize>() {
+                return Ok(Value::bool(idx < arr.len()));
+            }
+            // Arrays also have 'length'
+            if prop_name == "length" {
+                return Ok(Value::bool(true));
+            }
+        }
+        return Ok(Value::bool(false));
+    }
+
+    Ok(Value::bool(false))
 }
 
 // ===========================================

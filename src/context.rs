@@ -3137,6 +3137,54 @@ mod tests {
     }
 
     #[test]
+    fn test_has_own_property_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 42; }
+            var obj = new Obj();
+            var prop = \"x\" + \"\";
+            return obj.hasOwnProperty(prop);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_has_own_property_false() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 42; }
+            var obj = new Obj();
+            var prop = \"y\" + \"\";
+            return obj.hasOwnProperty(prop);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_global_this_math() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // globalThis.Math should work
+        let result = ctx.eval("return globalThis.Math.abs(-5);").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_global_this_self_reference() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // globalThis.globalThis === globalThis
+        let result = ctx.eval("
+            var g1 = globalThis;
+            var g2 = globalThis.globalThis;
+            return g1 === g2;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
     fn test_array_is_array_true() {
         let mut ctx = Context::new(64 * 1024);
 

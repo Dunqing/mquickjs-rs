@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 329 passing
+**Test Count**: 333 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -384,8 +384,10 @@
 - Object.keys(obj) - returns array of property names
 - Object.values(obj) - returns array of property values
 - Object.entries(obj) - returns array of [key, value] pairs
+- Object.prototype.hasOwnProperty(prop) - check if object has own property
 - Array.isArray(value) - check if value is an array
-- 6 Object/Array static method tests
+- globalThis - access to global object with all builtins
+- 10 Object/Array/global tests
 
 **Stage 5.2 Function.prototype Methods**:
 - Function.prototype.call(thisArg, ...args) - call function with specified this
