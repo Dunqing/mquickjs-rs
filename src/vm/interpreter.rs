@@ -3017,6 +3017,9 @@ impl Interpreter {
             "sort" => self.get_native_func("Array.prototype.sort").unwrap_or(Value::undefined()),
             "flat" => self.get_native_func("Array.prototype.flat").unwrap_or(Value::undefined()),
             "fill" => self.get_native_func("Array.prototype.fill").unwrap_or(Value::undefined()),
+            "splice" => self.get_native_func("Array.prototype.splice").unwrap_or(Value::undefined()),
+            "lastIndexOf" => self.get_native_func("Array.prototype.lastIndexOf").unwrap_or(Value::undefined()),
+            "flatMap" => self.get_native_func("Array.prototype.flatMap").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3051,6 +3054,10 @@ impl Interpreter {
             "includes" => self.get_native_func("String.prototype.includes").unwrap_or(Value::undefined()),
             "match" => self.get_native_func("String.prototype.match").unwrap_or(Value::undefined()),
             "search" => self.get_native_func("String.prototype.search").unwrap_or(Value::undefined()),
+            "lastIndexOf" => self.get_native_func("String.prototype.lastIndexOf").unwrap_or(Value::undefined()),
+            "trimStart" => self.get_native_func("String.prototype.trimStart").unwrap_or(Value::undefined()),
+            "trimEnd" => self.get_native_func("String.prototype.trimEnd").unwrap_or(Value::undefined()),
+            "replaceAll" => self.get_native_func("String.prototype.replaceAll").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3322,6 +3329,9 @@ impl Interpreter {
         self.register_native("Array.prototype.sort", native_array_sort, 0);
         self.register_native("Array.prototype.flat", native_array_flat, 0);
         self.register_native("Array.prototype.fill", native_array_fill, 1);
+        self.register_native("Array.prototype.splice", native_array_splice, 2);
+        self.register_native("Array.prototype.lastIndexOf", native_array_last_index_of, 1);
+        self.register_native("Array.prototype.flatMap", native_array_flat_map, 1);
 
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
@@ -3356,6 +3366,10 @@ impl Interpreter {
         self.register_native("String.prototype.includes", native_string_includes, 1);
         self.register_native("String.prototype.match", native_string_match, 1);
         self.register_native("String.prototype.search", native_string_search, 1);
+        self.register_native("String.prototype.lastIndexOf", native_string_last_index_of, 1);
+        self.register_native("String.prototype.trimStart", native_string_trim_start, 0);
+        self.register_native("String.prototype.trimEnd", native_string_trim_end, 0);
+        self.register_native("String.prototype.replaceAll", native_string_replace_all, 2);
 
         // Number static methods
         self.register_native("Number.isInteger", native_number_is_integer, 1);
@@ -3987,6 +4001,122 @@ fn native_array_fill(interp: &mut Interpreter, this: Value, args: &[Value]) -> R
 
     // Return the array itself (fill is in-place)
     Ok(this)
+}
+
+/// Array.prototype.splice - remove/replace elements and return removed elements
+fn native_array_splice(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "splice called on non-array".to_string())?;
+
+    let arr_len = interp.arrays.get(arr_idx as usize)
+        .map(|a| a.len())
+        .unwrap_or(0) as i32;
+
+    // Get start index (normalize negative values)
+    let start = args.get(0)
+        .and_then(|v| v.to_i32())
+        .map(|s| if s < 0 { (arr_len + s).max(0) } else { s.min(arr_len) })
+        .unwrap_or(0) as usize;
+
+    // Get delete count
+    let delete_count = args.get(1)
+        .and_then(|v| v.to_i32())
+        .map(|d| d.max(0).min(arr_len - start as i32) as usize)
+        .unwrap_or((arr_len - start as i32).max(0) as usize);
+
+    // Items to insert
+    let insert_items: Vec<Value> = args.iter().skip(2).copied().collect();
+
+    // Clone the array to work with
+    let removed: Vec<Value>;
+    if let Some(arr) = interp.arrays.get_mut(arr_idx as usize) {
+        // Remove elements
+        let end = (start + delete_count).min(arr.len());
+        removed = arr.drain(start..end).collect();
+
+        // Insert new elements
+        for (i, item) in insert_items.into_iter().enumerate() {
+            arr.insert(start + i, item);
+        }
+    } else {
+        removed = Vec::new();
+    }
+
+    // Return array of removed elements
+    let result_idx = interp.arrays.len() as u32;
+    interp.arrays.push(removed);
+    Ok(Value::array_idx(result_idx))
+}
+
+/// Array.prototype.lastIndexOf - find last index of element
+fn native_array_last_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "lastIndexOf called on non-array".to_string())?;
+
+    let search_element = args.first().copied().unwrap_or(Value::undefined());
+
+    let arr = interp.arrays.get(arr_idx as usize)
+        .map(|a| a.clone())
+        .unwrap_or_default();
+
+    // Optional fromIndex
+    let from_index = args.get(1)
+        .and_then(|v| v.to_i32())
+        .map(|i| if i < 0 { (arr.len() as i32 + i).max(-1) } else { i.min(arr.len() as i32 - 1) })
+        .unwrap_or(arr.len() as i32 - 1);
+
+    if from_index < 0 {
+        return Ok(Value::int(-1));
+    }
+
+    // Search backwards
+    for i in (0..=from_index as usize).rev() {
+        if i < arr.len() {
+            let elem = arr[i];
+            // Simple value comparison (strict equality)
+            let is_equal = elem.0 == search_element.0 ||
+                (elem.to_i32().is_some() && elem.to_i32() == search_element.to_i32());
+            if is_equal {
+                return Ok(Value::int(i as i32));
+            }
+        }
+    }
+
+    Ok(Value::int(-1))
+}
+
+/// Array.prototype.flatMap - map then flatten by 1 level
+fn native_array_flat_map(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "flatMap called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "flatMap requires a callback function".to_string())?;
+
+    let elements: Vec<Value> = interp.get_array(arr_idx)
+        .map(|arr| arr.clone())
+        .unwrap_or_default();
+
+    let mut result: Vec<Value> = Vec::new();
+
+    for (i, elem) in elements.into_iter().enumerate() {
+        // Call the callback
+        let mapped = interp.call_value(callback, this, &[elem, Value::int(i as i32), this])
+            .map_err(|e| e.to_string())?;
+
+        // Flatten one level if result is an array
+        if let Some(mapped_arr_idx) = mapped.to_array_idx() {
+            if let Some(inner_arr) = interp.get_array(mapped_arr_idx) {
+                result.extend(inner_arr.iter().copied());
+            }
+        } else {
+            result.push(mapped);
+        }
+    }
+
+    let result_idx = interp.arrays.len() as u32;
+    interp.arrays.push(result);
+    Ok(Value::array_idx(result_idx))
 }
 
 /// parseInt - parse string to integer
@@ -4738,6 +4868,116 @@ fn native_string_search(interp: &mut Interpreter, this: Value, args: &[Value]) -
     } else {
         Ok(Value::int(-1))
     }
+}
+
+/// String.prototype.lastIndexOf - find last index of substring
+fn native_string_last_index_of(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "lastIndexOf called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else if let Some(n) = search_val.to_i32() {
+            n.to_string()
+        } else {
+            return Ok(Value::int(-1));
+        }
+    } else {
+        return Ok(Value::int(-1));
+    };
+
+    if search.is_empty() {
+        return Ok(Value::int(s.len() as i32));
+    }
+
+    // Optional position argument
+    let position = args.get(1)
+        .and_then(|v| v.to_i32())
+        .map(|p| p.max(0) as usize)
+        .unwrap_or(s.len());
+
+    // Search backwards from position
+    let search_end = (position + search.len()).min(s.len());
+    if let Some(pos) = s[..search_end].rfind(&search) {
+        Ok(Value::int(pos as i32))
+    } else {
+        Ok(Value::int(-1))
+    }
+}
+
+/// String.prototype.trimStart - remove leading whitespace
+fn native_string_trim_start(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "trimStart called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let trimmed = s.trim_start().to_string();
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(trimmed);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.trimEnd - remove trailing whitespace
+fn native_string_trim_end(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "trimEnd called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?;
+
+    let trimmed = s.trim_end().to_string();
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(trimmed);
+    Ok(Value::string(new_str_idx))
+}
+
+/// String.prototype.replaceAll - replace all occurrences
+fn native_string_replace_all(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let str_idx = this.to_string_idx()
+        .ok_or_else(|| "replaceAll called on non-string".to_string())?;
+
+    let s = interp.get_string_by_idx(str_idx)
+        .ok_or_else(|| "invalid string".to_string())?
+        .to_string();
+
+    // Get search string
+    let search = if let Some(search_val) = args.get(0) {
+        if let Some(search_idx) = search_val.to_string_idx() {
+            interp.get_string_by_idx(search_idx).unwrap_or("").to_string()
+        } else {
+            return Ok(this); // Return original if search is not a string
+        }
+    } else {
+        return Ok(this);
+    };
+
+    // Get replacement string
+    let replacement = if let Some(replace_val) = args.get(1) {
+        if let Some(replace_idx) = replace_val.to_string_idx() {
+            interp.get_string_by_idx(replace_idx).unwrap_or("").to_string()
+        } else if let Some(n) = replace_val.to_i32() {
+            n.to_string()
+        } else {
+            "undefined".to_string()
+        }
+    } else {
+        "undefined".to_string()
+    };
+
+    let result = s.replace(&search, &replacement);
+
+    let new_str_idx = interp.runtime_strings.len() as u16 + Interpreter::RUNTIME_STRING_OFFSET;
+    interp.runtime_strings.push(result);
+    Ok(Value::string(new_str_idx))
 }
 
 // =============================================================================

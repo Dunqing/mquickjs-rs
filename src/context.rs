@@ -3470,4 +3470,96 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(60));
     }
+
+    // Array.prototype.splice tests
+    #[test]
+    fn test_array_splice_remove() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4, 5];
+            var removed = arr.splice(1, 2);
+            return arr.length + removed.length * 10;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(23)); // 3 + 2*10
+    }
+
+    #[test]
+    fn test_array_splice_insert() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 5];
+            arr.splice(2, 0, 3, 4);
+            return arr.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_array_last_index_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 2, 1];
+            return arr.lastIndexOf(2);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_array_last_index_of_not_found() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return arr.lastIndexOf(5);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(-1));
+    }
+
+    // String.prototype tests
+    #[test]
+    fn test_string_last_index_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'hello world hello';
+            return s.lastIndexOf('hello');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(12));
+    }
+
+    #[test]
+    fn test_string_trim_start() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = '  hello  ';
+            return s.trimStart().length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(7)); // "hello  ".length
+    }
+
+    #[test]
+    fn test_string_trim_end() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = '  hello  ';
+            return s.trimEnd().length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(7)); // "  hello".length
+    }
+
+    #[test]
+    fn test_string_replace_all() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var s = 'a-b-c-d';
+            return s.replaceAll('-', '_').indexOf('_');
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(1)); // First underscore at position 1
+    }
 }

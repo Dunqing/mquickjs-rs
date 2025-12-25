@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 327 passing
+**Test Count**: 335 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -431,4 +431,14 @@
 - Bracket notation property access on builtin objects (Array['of'], etc.)
 - 8 new tests (3 Object.assign, 1 Object.create, 2 Array.from, 2 Array.of)
 
-**Next Action**: Implement TypedArray (Stage 6.6) or more String methods
+**Stage 6.6 Additional Array/String Methods**:
+- Array.prototype.splice(start, deleteCount, ...items) - remove/replace elements
+- Array.prototype.lastIndexOf(element, fromIndex) - find last occurrence
+- Array.prototype.flatMap(callback) - map then flatten by 1 level
+- String.prototype.lastIndexOf(search, position) - find last occurrence
+- String.prototype.trimStart() - remove leading whitespace
+- String.prototype.trimEnd() - remove trailing whitespace
+- String.prototype.replaceAll(search, replacement) - replace all occurrences
+- 8 new tests
+
+**Next Action**: Implement TypedArray or continue with more built-in methods
