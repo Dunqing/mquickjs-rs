@@ -4645,4 +4645,101 @@ mod tests {
         // fround(42) = 42 (for integer impl)
         assert_eq!(result.to_i32(), Some(42));
     }
+
+    // ================================================
+    // Stage 6.15 Tests - Object property descriptors, globalThis
+    // ================================================
+
+    #[test]
+    fn test_object_get_own_property_descriptor() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 42; }
+            var obj = new Obj();
+            var desc = Object.getOwnPropertyDescriptor(obj, 'x');
+            return desc.value;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_object_define_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            function Desc() { this.value = 99; }
+            var desc = new Desc();
+            Object.defineProperty(obj, 'y', desc);
+            return obj.y;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(99));
+    }
+
+    #[test]
+    fn test_object_prevent_extensions() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            Object.preventExtensions(obj);
+            return Object.isExtensible(obj);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_object_is_extensible_true() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            function Obj() { this.x = 1; }
+            var obj = new Obj();
+            return Object.isExtensible(obj);
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_global_this_exists() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return globalThis !== undefined;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_global_this_math() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return globalThis.Math.abs(-5);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(5));
+    }
+
+    #[test]
+    fn test_global_this_parse_int() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return globalThis.parseInt(42);
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_global_this_self_reference() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            return globalThis.globalThis === globalThis;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
 }

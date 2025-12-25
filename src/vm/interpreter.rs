@@ -42,6 +42,8 @@ pub const BUILTIN_REGEXP: u32 = 14;
 pub const BUILTIN_MAP: u32 = 15;
 /// Set object index
 pub const BUILTIN_SET: u32 = 16;
+/// globalThis object index
+pub const BUILTIN_GLOBAL_THIS: u32 = 17;
 
 /// Native function signature
 ///
@@ -2204,6 +2206,7 @@ impl Interpreter {
                         "RegExp" => Some(Value::builtin_object(BUILTIN_REGEXP)),
                         "Map" => Some(Value::builtin_object(BUILTIN_MAP)),
                         "Set" => Some(Value::builtin_object(BUILTIN_SET)),
+                        "globalThis" => Some(Value::builtin_object(BUILTIN_GLOBAL_THIS)),
                         _ => self.get_native_func(name),
                     };
 
@@ -3526,6 +3529,10 @@ impl Interpreter {
                     "hasOwn" => self.get_native_func("Object.hasOwn").unwrap_or(Value::undefined()),
                     "is" => self.get_native_func("Object.is").unwrap_or(Value::undefined()),
                     "getPrototypeOf" => self.get_native_func("Object.getPrototypeOf").unwrap_or(Value::undefined()),
+                    "getOwnPropertyDescriptor" => self.get_native_func("Object.getOwnPropertyDescriptor").unwrap_or(Value::undefined()),
+                    "defineProperty" => self.get_native_func("Object.defineProperty").unwrap_or(Value::undefined()),
+                    "preventExtensions" => self.get_native_func("Object.preventExtensions").unwrap_or(Value::undefined()),
+                    "isExtensible" => self.get_native_func("Object.isExtensible").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3543,6 +3550,38 @@ impl Interpreter {
                 match prop_name {
                     "fromCharCode" => self.get_native_func("String.fromCharCode").unwrap_or(Value::undefined()),
                     "fromCodePoint" => self.get_native_func("String.fromCodePoint").unwrap_or(Value::undefined()),
+                    _ => Value::undefined(),
+                }
+            }
+            BUILTIN_GLOBAL_THIS => {
+                // globalThis provides access to all global objects and functions
+                match prop_name {
+                    "undefined" => Value::undefined(),
+                    "NaN" => Value::int(0),
+                    "Infinity" => Value::int(i32::MAX),
+                    "Math" => Value::builtin_object(BUILTIN_MATH),
+                    "JSON" => Value::builtin_object(BUILTIN_JSON),
+                    "Number" => Value::builtin_object(BUILTIN_NUMBER),
+                    "Boolean" => Value::builtin_object(BUILTIN_BOOLEAN),
+                    "String" => Value::builtin_object(BUILTIN_STRING),
+                    "Object" => Value::builtin_object(BUILTIN_OBJECT),
+                    "Array" => Value::builtin_object(BUILTIN_ARRAY),
+                    "console" => Value::builtin_object(BUILTIN_CONSOLE),
+                    "Date" => Value::builtin_object(BUILTIN_DATE),
+                    "Error" => Value::builtin_object(BUILTIN_ERROR),
+                    "RegExp" => Value::builtin_object(BUILTIN_REGEXP),
+                    "Map" => Value::builtin_object(BUILTIN_MAP),
+                    "Set" => Value::builtin_object(BUILTIN_SET),
+                    "globalThis" => Value::builtin_object(BUILTIN_GLOBAL_THIS),
+                    // Global functions
+                    "parseInt" => self.get_native_func("parseInt").unwrap_or(Value::undefined()),
+                    "parseFloat" => self.get_native_func("parseFloat").unwrap_or(Value::undefined()),
+                    "isNaN" => self.get_native_func("isNaN").unwrap_or(Value::undefined()),
+                    "isFinite" => self.get_native_func("isFinite").unwrap_or(Value::undefined()),
+                    "encodeURIComponent" => self.get_native_func("encodeURIComponent").unwrap_or(Value::undefined()),
+                    "decodeURIComponent" => self.get_native_func("decodeURIComponent").unwrap_or(Value::undefined()),
+                    "encodeURI" => self.get_native_func("encodeURI").unwrap_or(Value::undefined()),
+                    "decodeURI" => self.get_native_func("decodeURI").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3829,6 +3868,10 @@ impl Interpreter {
         self.register_native("Object.prototype.valueOf", native_object_prototype_value_of, 0);
         self.register_native("Object.is", native_object_is, 2);
         self.register_native("Object.getPrototypeOf", native_object_get_prototype_of, 1);
+        self.register_native("Object.getOwnPropertyDescriptor", native_object_get_own_property_descriptor, 2);
+        self.register_native("Object.defineProperty", native_object_define_property, 3);
+        self.register_native("Object.preventExtensions", native_object_prevent_extensions, 1);
+        self.register_native("Object.isExtensible", native_object_is_extensible, 1);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -7463,6 +7506,174 @@ fn native_object_get_prototype_of(interp: &mut Interpreter, _this: Value, args: 
     } else {
         Ok(Value::null())
     }
+}
+
+/// Object.getOwnPropertyDescriptor - get property descriptor
+fn native_object_get_own_property_descriptor(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Ok(Value::undefined());
+    };
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            // Find the property
+            for (key, value) in &obj_data.properties {
+                if key == &prop_name {
+                    // Create a descriptor object with value, writable, enumerable, configurable
+                    let mut descriptor = ObjectInstance {
+                        constructor: None,
+                        properties: vec![
+                            ("value".to_string(), *value),
+                            ("writable".to_string(), Value::bool(!obj_data.frozen)),
+                            ("enumerable".to_string(), Value::bool(true)),
+                            ("configurable".to_string(), Value::bool(!obj_data.sealed)),
+                        ],
+                        frozen: false,
+                        sealed: false,
+                    };
+                    let desc_idx = interp.objects.len() as u32;
+                    interp.objects.push(descriptor);
+                    return Ok(Value::object_idx(desc_idx));
+                }
+            }
+        }
+    } else if let Some(arr_idx) = obj.to_array_idx() {
+        if prop_name == "length" {
+            let len = interp.arrays.get(arr_idx as usize).map(|a| a.len()).unwrap_or(0);
+            let descriptor = ObjectInstance {
+                constructor: None,
+                properties: vec![
+                    ("value".to_string(), Value::int(len as i32)),
+                    ("writable".to_string(), Value::bool(true)),
+                    ("enumerable".to_string(), Value::bool(false)),
+                    ("configurable".to_string(), Value::bool(false)),
+                ],
+                frozen: false,
+                sealed: false,
+            };
+            let desc_idx = interp.objects.len() as u32;
+            interp.objects.push(descriptor);
+            return Ok(Value::object_idx(desc_idx));
+        } else if let Ok(idx) = prop_name.parse::<usize>() {
+            if let Some(arr) = interp.arrays.get(arr_idx as usize) {
+                if idx < arr.len() {
+                    let descriptor = ObjectInstance {
+                        constructor: None,
+                        properties: vec![
+                            ("value".to_string(), arr[idx]),
+                            ("writable".to_string(), Value::bool(true)),
+                            ("enumerable".to_string(), Value::bool(true)),
+                            ("configurable".to_string(), Value::bool(true)),
+                        ],
+                        frozen: false,
+                        sealed: false,
+                    };
+                    let desc_idx = interp.objects.len() as u32;
+                    interp.objects.push(descriptor);
+                    return Ok(Value::object_idx(desc_idx));
+                }
+            }
+        }
+    }
+
+    Ok(Value::undefined())
+}
+
+/// Object.defineProperty - define a property on an object
+fn native_object_define_property(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+    let descriptor = args.get(2).copied().unwrap_or(Value::undefined());
+
+    // Get property name as string
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else if let Some(n) = prop.to_i32() {
+        n.to_string()
+    } else {
+        return Err("Property name must be a string".to_string());
+    };
+
+    // Get value from descriptor
+    let value = if let Some(desc_idx) = descriptor.to_object_idx() {
+        if let Some(desc_obj) = interp.objects.get(desc_idx as usize) {
+            desc_obj.properties.iter()
+                .find(|(k, _)| k == "value")
+                .map(|(_, v)| *v)
+                .unwrap_or(Value::undefined())
+        } else {
+            Value::undefined()
+        }
+    } else {
+        Value::undefined()
+    };
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get_mut(obj_idx as usize) {
+            if obj_data.frozen {
+                return Err("Cannot define property on frozen object".to_string());
+            }
+            // Check if property already exists
+            let mut found = false;
+            for (key, val) in &mut obj_data.properties {
+                if key == &prop_name {
+                    *val = value;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                if obj_data.sealed {
+                    return Err("Cannot add property to sealed object".to_string());
+                }
+                obj_data.properties.push((prop_name, value));
+            }
+        }
+        return Ok(obj);
+    }
+
+    Err("Object.defineProperty requires an object".to_string())
+}
+
+/// Object.preventExtensions - prevent new properties from being added
+fn native_object_prevent_extensions(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get_mut(obj_idx as usize) {
+            obj_data.sealed = true; // Reusing sealed flag for non-extensible
+        }
+        Ok(obj)
+    } else {
+        // Return the argument for non-objects (ES6 behavior)
+        Ok(obj)
+    }
+}
+
+/// Object.isExtensible - check if object can have new properties added
+fn native_object_is_extensible(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    if let Some(obj_idx) = obj.to_object_idx() {
+        if let Some(obj_data) = interp.objects.get(obj_idx as usize) {
+            // An object is extensible if not sealed and not frozen
+            return Ok(Value::bool(!obj_data.sealed && !obj_data.frozen));
+        }
+    }
+    // Non-objects are not extensible
+    Ok(Value::bool(false))
 }
 
 // ===========================================

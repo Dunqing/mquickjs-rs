@@ -160,7 +160,7 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 421 passing
+**Test Count**: 429 passing
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser
@@ -564,5 +564,18 @@
   - console.trace(...args) - print stack trace
   - console.assert(condition, ...args) - conditional error message
 - 10 new tests
+
+**Stage 6.15 Object Property Descriptors, globalThis**:
+- Object property descriptor methods:
+  - Object.getOwnPropertyDescriptor(obj, prop) - get property descriptor object
+  - Object.defineProperty(obj, prop, descriptor) - define/modify property with descriptor
+  - Object.preventExtensions(obj) - prevent new properties from being added
+  - Object.isExtensible(obj) - check if object can have new properties
+- Property descriptors include: value, writable, enumerable, configurable
+- globalThis global object:
+  - Provides access to all global objects (Math, JSON, console, etc.)
+  - Self-referential: globalThis.globalThis === globalThis
+  - Access to global functions (parseInt, parseFloat, isNaN, etc.)
+- 8 new tests
 
 **Next Action**: Implement TypedArray, WeakMap/WeakSet, or Promise
