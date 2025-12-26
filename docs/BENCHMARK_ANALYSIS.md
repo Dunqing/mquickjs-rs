@@ -8,16 +8,16 @@ This document explains the performance differences between MQuickJS-RS (Rust) an
 
 | Benchmark | Rust (s) | C (s) | Ratio | Winner |
 |-----------|----------|-------|-------|--------|
-| fib | 0.019 | 0.058 | 0.32x | Rust 3.1x faster |
-| loop | 0.019 | 0.036 | 0.53x | Rust 1.9x faster |
-| json | 0.021 | 0.024 | 0.89x | Rust 12% faster |
-| object | 0.017 | 0.017 | 1.03x | Equal |
-| string | 0.016 | 0.016 | 1.04x | Equal |
-| closure | 0.017 | 0.016 | 1.08x | Equal |
-| array | 0.020 | 0.016 | 1.26x | C 26% faster |
-| sieve | 0.038 | 0.021 | 1.82x | C 82% faster |
+| fib | 0.018 | 0.059 | 0.30x | Rust 3.3x faster |
+| loop | 0.019 | 0.035 | 0.54x | Rust 1.9x faster |
+| json | 0.022 | 0.024 | 0.93x | Rust 8% faster |
+| string | 0.017 | 0.017 | 1.01x | Equal |
+| object | 0.018 | 0.017 | 1.08x | Equal |
+| closure | 0.018 | 0.016 | 1.10x | Equal |
+| array | 0.019 | 0.017 | 1.15x | C 15% faster |
+| sieve | 0.039 | 0.022 | 1.73x | C 73% faster |
 
-## Why Rust is Faster on `fib` (3.1x)
+## Why Rust is Faster on `fib` (3.3x)
 
 ### The Key Difference: Recursion Handling
 
@@ -94,29 +94,45 @@ The C version has additional branching for short float support that the Rust ver
 
 Rust's `match` on opcode compiles to efficient jump tables. The LLVM backend can better optimize the dispatch loop compared to the C switch statement with computed gotos.
 
-## Why C is Faster on `sieve` (1.8x) and `array` (1.3x)
+## Why C is Faster on `sieve` (1.7x) and `array` (1.15x)
 
-### Bounds Checking Overhead
+### Optimizations Applied
 
-Rust's safety guarantees require bounds checking on every array access:
+We've applied several optimizations to reduce the gap:
+
+1. **Unsafe stack operations**: `pop_unchecked()`, `pop2_unchecked()`, `pop3_unchecked()` for hot paths
+2. **Unsafe value extraction**: `to_i32_unchecked()`, `to_array_idx_unchecked()` after type checks
+3. **Unchecked array access**: `get_unchecked()` in GetArrayEl/PutArrayEl after bounds validation
 
 ```rust
-// Every array[i] access in Rust checks: i < array.len()
-let value = array.get(i)?;  // Returns Option, must handle None
+// Optimized fast path in GetArrayEl
+if arr.is_array() && idx.is_int() {
+    let arr_idx = unsafe { arr.to_array_idx_unchecked() };
+    let index = unsafe { idx.to_i32_unchecked() };
+    if index >= 0 {
+        let array = unsafe { self.get_array_unchecked(arr_idx) };
+        if index < array.len() {
+            // SAFETY: We just checked index < len
+            unsafe { *array.get_unchecked(index) }
+        }
+    }
+}
 ```
 
-The C implementation uses unchecked pointer arithmetic:
+### Remaining Gap
+
+Even with optimizations, C maintains a lead due to:
+
+1. **Method call overhead**: Each `array.push()` in JavaScript requires GetField lookup + native function call
+2. **Type tag checking**: Every operation still checks value types, even in fast paths
+3. **Memory allocation**: C uses custom arena allocator vs Rust's general-purpose `Vec`
+
+The C implementation uses direct pointer arithmetic with no runtime checks:
 
 ```c
 // Direct memory access, no bounds check
 val = arr->values[i];
 ```
-
-For the sieve benchmark which performs ~100,000+ array accesses, this overhead accumulates significantly.
-
-### Memory Allocation Patterns
-
-The C implementation uses a custom arena allocator optimized for the specific allocation patterns of a JS engine. The Rust version uses standard `Vec` which, while efficient, isn't as specialized.
 
 ## Summary
 
@@ -126,11 +142,11 @@ The C implementation uses a custom arena allocator optimized for the specific al
 | **Loop-heavy** (loop) | Rust | LLVM optimizations, simpler integer path |
 | **JSON parsing** | Rust | String handling optimizations |
 | **Object/String/Closure** | Tie | Similar implementation strategies |
-| **Array-heavy** (array, sieve) | C | No bounds checking, custom allocator |
+| **Array-heavy** (array, sieve) | C | Method call overhead, custom allocator |
 
-## Potential Optimizations for Rust
+## Potential Further Optimizations
 
-1. **Unsafe array access**: Use `get_unchecked()` in hot paths after validating bounds once
+1. ✅ **Unsafe array access**: Implemented `get_unchecked()` in hot paths
 2. **Custom allocator**: Implement arena allocation similar to C version
-3. **Short float support**: Add inline float optimization for numeric benchmarks
+3. **Inline push**: Specialize GetField for common array methods to avoid lookup
 4. **Profile-guided optimization**: Use PGO to optimize the interpreter dispatch loop

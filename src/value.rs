@@ -475,6 +475,16 @@ impl Value {
         }
     }
 
+    /// Get integer value without type checking
+    ///
+    /// # Safety
+    /// Caller must ensure value is an integer (is_int() returns true)
+    #[inline]
+    pub const unsafe fn to_i32_unchecked(self) -> i32 {
+        debug_assert!(self.is_int());
+        self.0.get_int()
+    }
+
     /// Get raw pointer, returns None if not a pointer
     #[inline]
     pub fn to_ptr<T>(self) -> Option<*mut T> {
@@ -524,6 +534,16 @@ impl Value {
         } else {
             None
         }
+    }
+
+    /// Get array index without type checking
+    ///
+    /// # Safety
+    /// Caller must ensure value is an array (is_array() returns true)
+    #[inline]
+    pub const unsafe fn to_array_idx_unchecked(self) -> u32 {
+        debug_assert!(self.is_array());
+        (self.0.get_special_value() & !ARRAY_INDEX_MARKER) as u32
     }
 
     /// Get object index, returns None if not an object

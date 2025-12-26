@@ -33,6 +33,50 @@ impl Stack {
         self.values.pop()
     }
 
+    /// Pop a value from the stack without checking
+    ///
+    /// # Safety
+    /// Caller must ensure stack is not empty
+    #[inline]
+    pub unsafe fn pop_unchecked(&mut self) -> Value {
+        let len = self.values.len();
+        debug_assert!(len > 0);
+        unsafe {
+            self.values.set_len(len - 1);
+            *self.values.as_ptr().add(len - 1)
+        }
+    }
+
+    /// Pop two values from the stack without checking
+    ///
+    /// # Safety
+    /// Caller must ensure stack has at least 2 elements
+    #[inline]
+    pub unsafe fn pop2_unchecked(&mut self) -> (Value, Value) {
+        let len = self.values.len();
+        debug_assert!(len >= 2);
+        unsafe {
+            self.values.set_len(len - 2);
+            let ptr = self.values.as_ptr();
+            (*ptr.add(len - 1), *ptr.add(len - 2))
+        }
+    }
+
+    /// Pop three values from the stack without checking
+    ///
+    /// # Safety
+    /// Caller must ensure stack has at least 3 elements
+    #[inline]
+    pub unsafe fn pop3_unchecked(&mut self) -> (Value, Value, Value) {
+        let len = self.values.len();
+        debug_assert!(len >= 3);
+        unsafe {
+            self.values.set_len(len - 3);
+            let ptr = self.values.as_ptr();
+            (*ptr.add(len - 1), *ptr.add(len - 2), *ptr.add(len - 3))
+        }
+    }
+
     /// Peek at the top value without removing it
     #[inline]
     pub fn peek(&self) -> Option<Value> {

@@ -70,10 +70,21 @@ impl JSArray {
     #[inline]
     pub fn get(&self, index: u32) -> Option<Value> {
         if index < self.len {
-            Some(self.elements[index as usize])
+            // SAFETY: We just checked that index < self.len, and self.len <= self.elements.len()
+            Some(unsafe { *self.elements.get_unchecked(index as usize) })
         } else {
             None
         }
+    }
+
+    /// Get an element without bounds checking
+    ///
+    /// # Safety
+    /// Caller must ensure index < self.len()
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: u32) -> Value {
+        // SAFETY: Caller guarantees index < self.len()
+        unsafe { *self.elements.get_unchecked(index as usize) }
     }
 
     /// Set an element at the specified index
@@ -93,11 +104,23 @@ impl JSArray {
             self.len = new_len;
         }
 
-        self.elements[index as usize] = value;
+        // SAFETY: We ensured index < self.len and self.len <= self.elements.len()
+        unsafe { *self.elements.get_unchecked_mut(index as usize) = value };
         true
     }
 
+    /// Set an element without bounds checking
+    ///
+    /// # Safety
+    /// Caller must ensure index < self.len()
+    #[inline]
+    pub unsafe fn set_unchecked(&mut self, index: u32, value: Value) {
+        // SAFETY: Caller guarantees index < self.len()
+        unsafe { *self.elements.get_unchecked_mut(index as usize) = value };
+    }
+
     /// Push a value onto the end of the array
+    #[inline]
     pub fn push(&mut self, value: Value) -> bool {
         if self.len >= MAX_ARRAY_LENGTH {
             return false;
@@ -106,20 +129,23 @@ impl JSArray {
         if self.len as usize >= self.elements.len() {
             self.elements.push(value);
         } else {
-            self.elements[self.len as usize] = value;
+            // SAFETY: We checked self.len < self.elements.len()
+            unsafe { *self.elements.get_unchecked_mut(self.len as usize) = value };
         }
         self.len += 1;
         true
     }
 
     /// Pop a value from the end of the array
+    #[inline]
     pub fn pop(&mut self) -> Option<Value> {
         if self.len == 0 {
             return None;
         }
 
         self.len -= 1;
-        Some(self.elements[self.len as usize])
+        // SAFETY: self.len was > 0, so self.len (after decrement) < old len <= elements.len()
+        Some(unsafe { *self.elements.get_unchecked(self.len as usize) })
     }
 
     /// Shift a value from the beginning of the array
@@ -128,11 +154,17 @@ impl JSArray {
             return None;
         }
 
-        let value = self.elements[0];
+        // SAFETY: len > 0 so index 0 is valid
+        let value = unsafe { *self.elements.get_unchecked(0) };
 
         // Shift all elements left
-        for i in 1..self.len as usize {
-            self.elements[i - 1] = self.elements[i];
+        let len = self.len as usize;
+        for i in 1..len {
+            // SAFETY: i < len and i-1 < len, both are valid indices
+            unsafe {
+                let v = *self.elements.get_unchecked(i);
+                *self.elements.get_unchecked_mut(i - 1) = v;
+            }
         }
 
         self.len -= 1;
@@ -292,8 +324,10 @@ impl JSArray {
 
     /// Get index of a value (using strict equality)
     pub fn index_of(&self, value: Value, from_index: u32) -> Option<u32> {
-        for i in from_index..self.len {
-            if self.elements[i as usize] == value {
+        let len = self.len;
+        for i in from_index..len {
+            // SAFETY: i < len <= elements.len()
+            if unsafe { *self.elements.get_unchecked(i as usize) } == value {
                 return Some(i);
             }
         }

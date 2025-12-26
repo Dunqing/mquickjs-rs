@@ -865,9 +865,29 @@ impl Interpreter {
         self.arrays.get(idx as usize)
     }
 
+    /// Get an array by index without bounds checking
+    ///
+    /// # Safety
+    /// Caller must ensure idx < self.arrays.len()
+    #[inline]
+    unsafe fn get_array_unchecked(&self, idx: u32) -> &Vec<Value> {
+        debug_assert!((idx as usize) < self.arrays.len());
+        unsafe { self.arrays.get_unchecked(idx as usize) }
+    }
+
     /// Get a mutable array by index
     fn get_array_mut(&mut self, idx: u32) -> Option<&mut Vec<Value>> {
         self.arrays.get_mut(idx as usize)
+    }
+
+    /// Get a mutable array by index without bounds checking
+    ///
+    /// # Safety
+    /// Caller must ensure idx < self.arrays.len()
+    #[inline]
+    unsafe fn get_array_mut_unchecked(&mut self, idx: u32) -> &mut Vec<Value> {
+        debug_assert!((idx as usize) < self.arrays.len());
+        unsafe { self.arrays.get_unchecked_mut(idx as usize) }
     }
 
     /// Create a new object and return its value
@@ -2528,8 +2548,27 @@ impl Interpreter {
 
                 // GetArrayEl - get array element: arr idx -> val
                 op if op == OpCode::GetArrayEl as u8 => {
-                    let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    let arr = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    // SAFETY: Stack operations are valid for well-formed bytecode
+                    let (idx, arr) = unsafe { self.stack.pop2_unchecked() };
+
+                    // Fast path: regular array with integer index
+                    if arr.is_array() && idx.is_int() {
+                        let arr_idx = unsafe { arr.to_array_idx_unchecked() };
+                        let index = unsafe { idx.to_i32_unchecked() };
+                        if index >= 0 {
+                            let index = index as usize;
+                            // SAFETY: Array index is valid for arrays we created
+                            let array = unsafe { self.get_array_unchecked(arr_idx) };
+                            let val = if index < array.len() {
+                                // SAFETY: We just checked index < len
+                                unsafe { *array.get_unchecked(index) }
+                            } else {
+                                Value::undefined()
+                            };
+                            self.stack.push(val);
+                            continue;
+                        }
+                    }
 
                     // Check if it's a typed array
                     if let Some(typed_idx) = arr.to_typed_array_idx() {
@@ -2546,7 +2585,7 @@ impl Interpreter {
                         continue;
                     }
 
-                    // Get the array
+                    // Slow path for non-array or non-integer index
                     let arr_idx = arr.to_array_idx().ok_or_else(|| {
                         InterpreterError::TypeError("cannot read property of non-array".to_string())
                     })?;
@@ -2555,7 +2594,6 @@ impl Interpreter {
                         InterpreterError::InternalError("invalid array index".to_string())
                     })?;
 
-                    // Get the element
                     let index = idx.to_i32().ok_or_else(|| {
                         InterpreterError::TypeError("array index must be a number".to_string())
                     })? as usize;
@@ -2604,9 +2642,29 @@ impl Interpreter {
 
                 // PutArrayEl - set array element: arr idx val -> val
                 op if op == OpCode::PutArrayEl as u8 => {
-                    let val = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    let idx = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    let arr = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
+                    // SAFETY: Stack operations are valid for well-formed bytecode
+                    let (val, idx, arr) = unsafe { self.stack.pop3_unchecked() };
+
+                    // Fast path: regular array with integer index within bounds
+                    if arr.is_array() && idx.is_int() {
+                        let arr_idx = unsafe { arr.to_array_idx_unchecked() };
+                        let index = unsafe { idx.to_i32_unchecked() };
+                        if index >= 0 {
+                            let index = index as usize;
+                            // SAFETY: Array index is valid for arrays we created
+                            let array = unsafe { self.get_array_mut_unchecked(arr_idx) };
+                            if index < array.len() {
+                                // SAFETY: We just checked index < len
+                                unsafe { *array.get_unchecked_mut(index) = val };
+                            } else {
+                                // Extend array if index is out of bounds
+                                array.resize(index + 1, Value::undefined());
+                                array[index] = val;
+                            }
+                            self.stack.push(val);
+                            continue;
+                        }
+                    }
 
                     // Check if it's a typed array
                     if let Some(typed_idx) = arr.to_typed_array_idx() {
@@ -2622,17 +2680,15 @@ impl Interpreter {
                         continue;
                     }
 
-                    // Get the array
+                    // Slow path for non-array or non-integer index
                     let arr_idx = arr.to_array_idx().ok_or_else(|| {
                         InterpreterError::TypeError("cannot set property of non-array".to_string())
                     })?;
 
-                    // Get the index
                     let index = idx.to_i32().ok_or_else(|| {
                         InterpreterError::TypeError("array index must be a number".to_string())
                     })? as usize;
 
-                    // Set the element, extending if necessary
                     let array = self.get_array_mut(arr_idx).ok_or_else(|| {
                         InterpreterError::InternalError("invalid array index".to_string())
                     })?;

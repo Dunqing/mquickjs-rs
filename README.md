@@ -233,16 +233,16 @@ Performance comparison between MQuickJS-RS (Rust) and original MQuickJS (C).
 
 | Benchmark | Rust (s) | C (s) | Ratio | Notes |
 |-----------|----------|-------|-------|-------|
-| fib | 0.019 | 0.058 | **0.32x** | Rust 3.1x faster |
-| loop | 0.019 | 0.036 | **0.53x** | Rust 1.9x faster |
-| json | 0.021 | 0.024 | **0.89x** | Rust 12% faster |
-| object | 0.017 | 0.017 | 1.03x | Equal |
-| string | 0.016 | 0.016 | 1.04x | Equal |
-| closure | 0.017 | 0.016 | 1.08x | Equal |
-| array | 0.020 | 0.016 | 1.26x | C 26% faster |
-| sieve | 0.038 | 0.021 | 1.82x | C 82% faster |
+| fib | 0.018 | 0.059 | **0.30x** | Rust 3.3x faster |
+| loop | 0.019 | 0.035 | **0.54x** | Rust 1.9x faster |
+| json | 0.022 | 0.024 | **0.93x** | Rust 8% faster |
+| string | 0.017 | 0.017 | 1.01x | Equal |
+| object | 0.018 | 0.017 | 1.08x | Equal |
+| closure | 0.018 | 0.016 | 1.10x | Equal |
+| array | 0.019 | 0.017 | 1.15x | C 15% faster |
+| sieve | 0.039 | 0.022 | 1.73x | C 73% faster |
 
-**Summary**: The Rust port is competitive with the original C implementation. It's significantly faster on recursive function calls and loops, roughly equal on object/string/closure operations, and slower on array-heavy and prime sieve workloads.
+**Summary**: The Rust port is competitive with the original C implementation. It's significantly faster on recursive function calls (stackless interpreter) and loops (LLVM optimizations), roughly equal on object/string/closure operations, and slower on array-heavy workloads (bounds checking overhead).
 
 ### Running Benchmarks
 
