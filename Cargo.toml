@@ -22,6 +22,11 @@ regex = "1"
 rustyline = "14"
 
 [dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "js_benchmarks"
+harness = false
 
 [profile.release]
 opt-level = 3
