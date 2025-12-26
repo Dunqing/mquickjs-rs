@@ -11,7 +11,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BENCH_SCRIPTS="$SCRIPT_DIR/scripts"
-ORIGINAL_MQJS="${1:-}"
+# Default to vendor submodule if no path provided
+ORIGINAL_MQJS="${1:-$PROJECT_DIR/vendor/mquickjs/mqjs}"
 
 echo "=== MQuickJS Benchmark Comparison ==="
 echo ""
@@ -69,12 +70,6 @@ for script in "$BENCH_SCRIPTS"/*.js; do
         printf "%-20s %10s %10s %10s\n" "$name" "$rust_time" "N/A" "N/A"
     fi
 done
-
-echo ""
-if [ -z "$ORIGINAL_MQJS" ]; then
-    echo "Note: Pass path to original mqjs binary for comparison"
-    echo "  Usage: $0 /path/to/mqjs"
-fi
 
 echo ""
 echo "For detailed Rust benchmarks, run:"

@@ -1,0 +1,3 @@
+[submodule "vendor/mquickjs"]
+	path = vendor/mquickjs
+	url = https://github.com/bellard/mquickjs.git
