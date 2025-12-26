@@ -325,13 +325,7 @@ impl JSArray {
     /// Get index of a value (using strict equality)
     pub fn index_of(&self, value: Value, from_index: u32) -> Option<u32> {
         let len = self.len;
-        for i in from_index..len {
-            // SAFETY: i < len <= elements.len()
-            if unsafe { *self.elements.get_unchecked(i as usize) } == value {
-                return Some(i);
-            }
-        }
-        None
+        (from_index..len).find(|&i| unsafe { *self.elements.get_unchecked(i as usize) } == value)
     }
 
     /// Get last index of a value (using strict equality)
@@ -341,12 +335,7 @@ impl JSArray {
         }
 
         let start = from_index.min(self.len - 1);
-        for i in (0..=start).rev() {
-            if self.elements[i as usize] == value {
-                return Some(i);
-            }
-        }
-        None
+        (0..=start).rev().find(|&i| self.elements[i as usize] == value)
     }
 
     /// Check if array includes a value

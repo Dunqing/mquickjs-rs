@@ -179,11 +179,7 @@ impl Heap {
     /// Get the amount of free space
     #[inline]
     pub fn free_space(&self) -> usize {
-        if self.stack_ptr > self.heap_ptr {
-            self.stack_ptr - self.heap_ptr
-        } else {
-            0
-        }
+        self.stack_ptr.saturating_sub(self.heap_ptr)
     }
 
     /// Check if we have enough free memory
@@ -238,7 +234,10 @@ impl Heap {
     ///
     /// # Safety
     /// Caller must ensure ptr points to a valid allocated block.
+    /// This returns a mutable reference through an immutable self reference
+    /// because the mutation goes through the raw pointer, not through self.
     #[inline]
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn get_header(&self, ptr: *mut u8) -> &mut BlockHeader {
         unsafe { &mut *(ptr.sub(WORD_SIZE) as *mut BlockHeader) }
     }

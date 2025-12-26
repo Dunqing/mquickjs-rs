@@ -226,7 +226,7 @@ impl Value {
     pub const fn int(val: i32) -> Self {
         // Check if value fits in 31 bits (will panic in const context if not)
         // Range: -2^30 to 2^30 - 1
-        assert!(val >= -(1 << 30) && val <= (1 << 30) - 1, "Integer out of 31-bit range");
+        assert!(val >= -(1 << 30) && val < (1 << 30), "Integer out of 31-bit range");
         Value(RawValue::from_i32(val))
     }
 

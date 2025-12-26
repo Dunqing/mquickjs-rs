@@ -240,7 +240,7 @@ impl JSObject {
         if id >= ClassId::User as u8 {
             ClassId::User
         } else {
-            unsafe { std::mem::transmute(id) }
+            unsafe { std::mem::transmute::<u8, ClassId>(id) }
         }
     }
 

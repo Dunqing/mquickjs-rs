@@ -317,7 +317,7 @@ impl<'a> Compiler<'a> {
             _ => {
                 // Large integer: for now, truncate to short int range
                 // TODO: Store as float constant when float support is added
-                let idx = self.add_constant(Value::int(val.max(-(1 << 30)).min((1 << 30) - 1)));
+                let idx = self.add_constant(Value::int(val.clamp(-(1 << 30), (1 << 30) - 1)));
                 self.emit_const(idx);
             }
         }
@@ -1422,7 +1422,7 @@ impl<'a> Compiler<'a> {
                     // TODO: Handle floats when float support is added to Value
                     // For now, truncate to integer
                     let int_val = n as i32;
-                    self.emit_int(int_val.max(-(1 << 30)).min((1 << 30) - 1));
+                    self.emit_int(int_val.clamp(-(1 << 30), (1 << 30) - 1));
                 }
             }
             Token::String(s) => {

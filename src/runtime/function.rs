@@ -240,7 +240,7 @@ impl FunctionBytecode {
     pub fn calculate_stack_size(&mut self) {
         // This is a simplified version - a real implementation
         // would analyze the bytecode to find max stack depth
-        self.stack_size = (self.local_count as u16).saturating_add(16);
+        self.stack_size = self.local_count.saturating_add(16);
     }
 
     /// Serialize to bytes for bytecode file format

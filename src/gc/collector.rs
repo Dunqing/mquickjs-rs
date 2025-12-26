@@ -113,10 +113,10 @@ fn mark_object(heap: &mut Heap, ptr: *mut u8) {
                 let values = ptr as *mut Value;
                 for i in 0..size_words {
                     let val = *values.add(i);
-                    if val.is_ptr() {
-                        if let Some(child_ptr) = val.to_ptr::<u8>() {
-                            mark_object(heap, child_ptr);
-                        }
+                    if val.is_ptr()
+                        && let Some(child_ptr) = val.to_ptr::<u8>()
+                    {
+                        mark_object(heap, child_ptr);
                     }
                 }
             }

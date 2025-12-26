@@ -154,7 +154,7 @@ pub fn u64_to_str(buf: &mut [u8], mut val: u64) -> usize {
 pub fn u64_to_str_radix(buf: &mut [u8], mut val: u64, radix: u32) -> usize {
     const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 
-    if buf.is_empty() || radix < 2 || radix > 36 {
+    if buf.is_empty() || !(2..=36).contains(&radix) {
         return 0;
     }
 

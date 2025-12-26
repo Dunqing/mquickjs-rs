@@ -50,7 +50,7 @@ pub fn unicode_from_utf8(buf: &[u8]) -> Option<(u32, usize)> {
         return Some((b0 as u32, 1));
     }
 
-    if b0 < 0xC0 || b0 >= 0xF8 {
+    if !(0xC0..0xF8).contains(&b0) {
         return None; // Invalid start byte
     }
 
@@ -67,8 +67,8 @@ pub fn unicode_from_utf8(buf: &[u8]) -> Option<(u32, usize)> {
     }
 
     // Check continuation bytes
-    for i in 1..len {
-        if buf[i] & 0xC0 != 0x80 {
+    for byte in buf.iter().take(len).skip(1) {
+        if byte & 0xC0 != 0x80 {
             return None;
         }
     }
