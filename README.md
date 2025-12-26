@@ -224,6 +224,39 @@ MQuickJS (and this Rust port) is a **minimalist subset** of QuickJS:
 
 - **[How It Works](docs/HOW_IT_WORKS.md)** - Deep dive into JavaScript engine internals for learners: lexer, parser, bytecode, VM, garbage collection, closures, and more
 
+## Benchmarks
+
+Performance comparison between MQuickJS-RS (Rust) and original MQuickJS (C).
+
+**Machine**: Apple M4 Max, 64 GB RAM, macOS
+
+| Benchmark | Rust (s) | C (s) | Ratio | Notes |
+|-----------|----------|-------|-------|-------|
+| fib | 0.019 | 0.058 | **0.32x** | Rust 3.1x faster |
+| loop | 0.019 | 0.036 | **0.53x** | Rust 1.9x faster |
+| json | 0.021 | 0.024 | **0.89x** | Rust 12% faster |
+| object | 0.017 | 0.017 | 1.03x | Equal |
+| string | 0.016 | 0.016 | 1.04x | Equal |
+| closure | 0.017 | 0.016 | 1.08x | Equal |
+| array | 0.020 | 0.016 | 1.26x | C 26% faster |
+| sieve | 0.038 | 0.021 | 1.82x | C 82% faster |
+
+**Summary**: The Rust port is competitive with the original C implementation. It's significantly faster on recursive function calls and loops, roughly equal on object/string/closure operations, and slower on array-heavy and prime sieve workloads.
+
+### Running Benchmarks
+
+```bash
+# Build original C implementation
+git submodule update --init
+make -C vendor/mquickjs
+
+# Run comparison
+./benches/compare.sh
+
+# Run detailed Rust benchmarks (Criterion)
+cargo bench
+```
+
 ## License
 
 MIT License
