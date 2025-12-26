@@ -223,6 +223,7 @@ MQuickJS (and this Rust port) is a **minimalist subset** of QuickJS:
 ## Documentation
 
 - **[How It Works](docs/HOW_IT_WORKS.md)** - Deep dive into JavaScript engine internals for learners: lexer, parser, bytecode, VM, garbage collection, closures, and more
+- **[Benchmark Analysis](docs/BENCHMARK_ANALYSIS.md)** - Why Rust is 3x faster on recursion (stackless interpreter) and why C is faster on arrays (no bounds checking)
 
 ## Benchmarks
 
