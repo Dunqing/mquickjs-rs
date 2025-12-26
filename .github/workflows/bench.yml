@@ -1,0 +1,146 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Build C implementation
+        run: make -C vendor/mquickjs
+
+      - name: Run benchmark comparison
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Benchmark | Rust (s) | C (s) | Ratio | Notes |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|----------|-------|-------|-------|" >> $GITHUB_STEP_SUMMARY
+
+          for script in benches/scripts/*.js; do
+            name=$(basename "$script" .js)
+
+            # Run Rust version (3 runs, take average)
+            rust_total=0
+            for i in 1 2 3; do
+              start=$(date +%s.%N)
+              ./target/release/mqjs "$script" > /dev/null 2>&1
+              end=$(date +%s.%N)
+              elapsed=$(echo "$end - $start" | bc)
+              rust_total=$(echo "$rust_total + $elapsed" | bc)
+            done
+            rust_time=$(echo "scale=4; $rust_total / 3" | bc)
+
+            # Run C version (3 runs, take average)
+            c_total=0
+            for i in 1 2 3; do
+              start=$(date +%s.%N)
+              ./vendor/mquickjs/mqjs "$script" > /dev/null 2>&1
+              end=$(date +%s.%N)
+              elapsed=$(echo "$end - $start" | bc)
+              c_total=$(echo "$c_total + $elapsed" | bc)
+            done
+            c_time=$(echo "scale=4; $c_total / 3" | bc)
+
+            # Calculate ratio
+            ratio=$(echo "scale=2; $rust_time / $c_time" | bc)
+
+            # Determine notes
+            if (( $(echo "$ratio < 0.9" | bc -l) )); then
+              notes="Rust faster"
+            elif (( $(echo "$ratio > 1.1" | bc -l) )); then
+              notes="C faster"
+            else
+              notes="Equal"
+            fi
+
+            echo "| $name | $rust_time | $c_time | ${ratio}x | $notes |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Benchmarks run on GitHub Actions runner (Ubuntu)_" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run Criterion benchmarks
+        run: cargo bench --no-run
+
+  benchmark-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Build C implementation
+        run: make -C vendor/mquickjs
+
+      - name: Run benchmark comparison
+        run: |
+          echo "## Benchmark Results (macOS)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Benchmark | Rust (s) | C (s) | Ratio |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|----------|-------|-------|" >> $GITHUB_STEP_SUMMARY
+
+          for script in benches/scripts/*.js; do
+            name=$(basename "$script" .js)
+
+            # Run Rust version (3 runs)
+            rust_total=0
+            for i in 1 2 3; do
+              start=$(python3 -c 'import time; print(time.time())')
+              ./target/release/mqjs "$script" > /dev/null 2>&1
+              end=$(python3 -c 'import time; print(time.time())')
+              elapsed=$(python3 -c "print($end - $start)")
+              rust_total=$(python3 -c "print($rust_total + $elapsed)")
+            done
+            rust_time=$(python3 -c "print(f'{$rust_total / 3:.4f}')")
+
+            # Run C version (3 runs)
+            c_total=0
+            for i in 1 2 3; do
+              start=$(python3 -c 'import time; print(time.time())')
+              ./vendor/mquickjs/mqjs "$script" > /dev/null 2>&1
+              end=$(python3 -c 'import time; print(time.time())')
+              elapsed=$(python3 -c "print($end - $start)")
+              c_total=$(python3 -c "print($c_total + $elapsed)")
+            done
+            c_time=$(python3 -c "print(f'{$c_total / 3:.4f}')")
+
+            ratio=$(python3 -c "print(f'{$rust_time / $c_time:.2f}x' if $c_time > 0 else 'N/A')")
+
+            echo "| $name | $rust_time | $c_time | $ratio |" >> $GITHUB_STEP_SUMMARY
+          done
