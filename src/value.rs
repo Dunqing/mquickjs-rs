@@ -83,6 +83,10 @@ pub const REGEXP_OBJECT_MARKER: i32 = 1 << 19;
 /// When bit 18 is set, it's a TypedArray object index
 pub const TYPED_ARRAY_MARKER: i32 = 1 << 18;
 
+/// Marker bit for ArrayBuffer objects
+/// When bit 17 is set, it's an ArrayBuffer object index
+pub const ARRAY_BUFFER_MARKER: i32 = 1 << 17;
+
 /// Raw value representation - a single word
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -652,6 +656,35 @@ impl Value {
     pub const fn to_typed_array_idx(self) -> Option<u32> {
         if self.is_typed_array() {
             Some((self.0.get_special_value() & !TYPED_ARRAY_MARKER) as u32)
+        } else {
+            None
+        }
+    }
+
+    /// Create an ArrayBuffer object value
+    #[inline]
+    pub const fn array_buffer_object(idx: u32) -> Self {
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            (idx as i32) | ARRAY_BUFFER_MARKER,
+        ))
+    }
+
+    /// Check if this value is an ArrayBuffer object
+    #[inline]
+    pub const fn is_array_buffer(self) -> bool {
+        self.0.get_special_tag() == SpecialTag::CatchOffset as u8
+            && (self.0.get_special_value() & ARRAY_BUFFER_MARKER) != 0
+            && (self.0.get_special_value() & TYPED_ARRAY_MARKER) == 0
+            && (self.0.get_special_value() & REGEXP_OBJECT_MARKER) == 0
+            && (self.0.get_special_value() & ERROR_OBJECT_MARKER) == 0
+    }
+
+    /// Get ArrayBuffer object index, returns None if not an ArrayBuffer object
+    #[inline]
+    pub const fn to_array_buffer_idx(self) -> Option<u32> {
+        if self.is_array_buffer() {
+            Some((self.0.get_special_value() & !ARRAY_BUFFER_MARKER) as u32)
         } else {
             None
         }

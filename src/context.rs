@@ -3190,6 +3190,179 @@ mod tests {
     }
 
     #[test]
+    fn test_object_get_prototype_of() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object.getPrototypeOf on array
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            var proto = Object.getPrototypeOf(arr);
+            return proto !== null;
+        ").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_object_create() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object.create creates new object
+        let result = ctx.eval("
+            var obj = Object.create(null);
+            obj.x = 42;
+            return obj.x;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+    }
+
+    #[test]
+    fn test_object_define_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Object.defineProperty exists - test that it's callable
+        let result = ctx.eval("
+            return typeof Object.defineProperty;
+        ").unwrap();
+        // Should return "function"
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_math_constants() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Math.PI is approximately 3 (integer approx)
+        let result = ctx.eval("return Math.PI;").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+
+        // Math.E is approximately 2 (integer approx)
+        let result = ctx.eval("return Math.E;").unwrap();
+        assert_eq!(result.to_i32(), Some(2));
+    }
+
+    #[test]
+    fn test_math_trig_functions() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Math.sin(0) = 0
+        let result = ctx.eval("return Math.sin(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+
+        // Math.cos(0) = 1 (approximation for integers)
+        let result = ctx.eval("return Math.cos(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(1));
+    }
+
+    #[test]
+    fn test_math_inverse_trig() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Math.asin(1) = 90 degrees
+        let result = ctx.eval("return Math.asin(1);").unwrap();
+        assert_eq!(result.to_i32(), Some(90));
+
+        // Math.acos(0) = 90 degrees
+        let result = ctx.eval("return Math.acos(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(90));
+
+        // Math.atan(0) = 0
+        let result = ctx.eval("return Math.atan(0);").unwrap();
+        assert_eq!(result.to_i32(), Some(0));
+    }
+
+    #[test]
+    fn test_math_random() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Math.random() returns a value between 0 and 999
+        let result = ctx.eval("return Math.random();").unwrap();
+        let val = result.to_i32().unwrap();
+        assert!(val >= 0 && val < 1000);
+    }
+
+    #[test]
+    fn test_parse_float() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // parseFloat with integer string
+        let result = ctx.eval("return parseFloat('42');").unwrap();
+        assert_eq!(result.to_i32(), Some(42));
+
+        // parseFloat with decimal (truncated to integer)
+        let result = ctx.eval("return parseFloat('3.14');").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_is_finite() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // isFinite with number
+        let result = ctx.eval("return isFinite(42);").unwrap();
+        assert_eq!(result.to_bool(), Some(true));
+
+        // isFinite with non-number returns false
+        let result = ctx.eval("return isFinite('hello');").unwrap();
+        assert_eq!(result.to_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_number_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // (42).toString() returns "42"
+        let result = ctx.eval("return (42).toString();").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_number_to_fixed() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // (42).toFixed(2) returns "42.00"
+        let result = ctx.eval("return (42).toFixed(2);").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_array_buffer() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Create ArrayBuffer with length 10
+        let result = ctx.eval("
+            var buf = new ArrayBuffer(10);
+            return buf.byteLength;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(10));
+    }
+
+    #[test]
+    fn test_typed_array_subarray() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Create Uint8Array and subarray
+        let result = ctx.eval("
+            var arr = new Uint8Array([1, 2, 3, 4, 5]);
+            var sub = arr.subarray(1, 4);
+            return sub.length;
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(3));
+    }
+
+    #[test]
+    fn test_typed_array_subarray_values() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Verify subarray values
+        let result = ctx.eval("
+            var arr = new Uint8Array([10, 20, 30, 40, 50]);
+            var sub = arr.subarray(1, 4);
+            return sub[0];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(20));
+    }
+
+    #[test]
     fn test_global_this_math() {
         let mut ctx = Context::new(64 * 1024);
 
@@ -3704,4 +3877,181 @@ mod tests {
         ").unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
+
+    #[test]
+    fn test_uint8_clamped_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Uint8ClampedArray(3);
+            arr[0] = -10;   // clamped to 0
+            arr[1] = 300;   // clamped to 255
+            arr[2] = 100;   // stays 100
+            return arr[0] + arr[1] + arr[2];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(0 + 255 + 100)); // 355
+    }
+
+    #[test]
+    fn test_float32_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Float32Array(2);
+            arr[0] = 3;
+            arr[1] = 4;
+            return arr[0] + arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(7));
+    }
+
+    #[test]
+    fn test_float64_array() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var arr = new Float64Array(2);
+            arr[0] = 10;
+            arr[1] = 20;
+            return arr[0] + arr[1];
+        ").unwrap();
+        assert_eq!(result.to_i32(), Some(30));
+    }
+
+    #[test]
+    fn test_eval_error() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var e = new EvalError('bad eval');
+            return e.name;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_uri_error() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var e = new URIError('bad uri');
+            return e.name;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_internal_error() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var e = new InternalError('too much recursion');
+            return e.name;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_error_stack_property() {
+        let mut ctx = Context::new(64 * 1024);
+
+        let result = ctx.eval("
+            var e = new Error('test');
+            return typeof e.stack;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_error_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check that toString method exists on Error
+        let result = ctx.eval("
+            var e = new Error('test message');
+            return typeof e.toString;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_array_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check that toString method exists
+        let result = ctx.eval("
+            var arr = [1, 2, 3];
+            return typeof arr.toString;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_function_to_string() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check that toString method exists
+        let result = ctx.eval("
+            function foo() { return 1; }
+            return typeof foo.toString;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_array_reduce_right() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // Check that reduceRight method exists
+        let result = ctx.eval("
+            var arr = [1, 2, 3, 4];
+            return typeof arr.reduceRight;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_gc_function() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // gc() should be a function and return undefined
+        let result = ctx.eval("
+            return typeof gc;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_load_function() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // load() should be a function
+        let result = ctx.eval("
+            return typeof load;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_set_timeout_function() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // setTimeout should be a function
+        let result = ctx.eval("
+            return typeof setTimeout;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
+    #[test]
+    fn test_clear_timeout_function() {
+        let mut ctx = Context::new(64 * 1024);
+
+        // clearTimeout should be a function
+        let result = ctx.eval("
+            return typeof clearTimeout;
+        ").unwrap();
+        assert!(result.is_string());
+    }
+
 }

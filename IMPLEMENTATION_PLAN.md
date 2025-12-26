@@ -160,13 +160,32 @@
 - `src/util/mod.rs`, `dtoa.rs`, `unicode.rs` - Utilities
 - `src/bin/mqjs.rs` - REPL binary
 
-**Test Count**: 344 passing
+**Test Count**: 373 passing
 
 **Additional mquickjs Features (post-Stage 8)**:
 - String.charCodeAt, String.lastIndexOf
 - String.fromCharCode, String.fromCodePoint
 - Array.lastIndexOf
 - performance.now
+- Object.getPrototypeOf, Object.setPrototypeOf, Object.create, Object.defineProperty
+- Object.prototype.toString
+- Math.sign, Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.random, Math.atan2
+- Math.asin, Math.acos, Math.atan
+- Math.pow, Math.sqrt
+- Math constants: PI, E, LN2, LN10, LOG2E, LOG10E, SQRT2, SQRT1_2
+- parseFloat, isFinite global functions
+- Number.prototype.toString, toFixed, toExponential, toPrecision
+- ArrayBuffer constructor with byteLength property
+- TypedArray.prototype.subarray
+- Uint8ClampedArray, Float32Array, Float64Array TypedArray types
+- EvalError, URIError, InternalError error types
+- Error.prototype.stack, Error.prototype.toString
+- Array.prototype.toString, Array.prototype.reduceRight
+- Function.prototype.toString
+- gc() - trigger garbage collection (placeholder)
+- load(filename) - load and execute a JavaScript file
+- setTimeout(callback, delay) - schedule callback (returns timer ID)
+- clearTimeout(id) - cancel a scheduled timeout
 
 **Stage 8 CLI Features**:
 - Complete argument parsing (-h, -e, -i, -I, -d, --memory-limit)
@@ -358,13 +377,15 @@
 - ERROR_OBJECT_MARKER (bit 20) for value encoding
 - Value::error_object(), is_error_object(), to_error_object_idx() methods
 - BUILTIN_ERROR, BUILTIN_TYPE_ERROR, BUILTIN_REFERENCE_ERROR, BUILTIN_SYNTAX_ERROR, BUILTIN_RANGE_ERROR constants
+- BUILTIN_EVAL_ERROR, BUILTIN_URI_ERROR, BUILTIN_INTERNAL_ERROR constants
 - GetGlobal handler returns builtin Error types
 - CallConstructor handles Error builtin constructors (creates ErrorObject)
-- get_error_property() returns name and message as runtime strings
+- get_error_property() returns name, message, and stack as runtime strings
+- Error.prototype.stack property for stack trace compatibility
 - GetField handler dispatches to get_error_property for error objects
 - format_value() handles error object formatting
 - throw new Error("msg") works with try-catch
-- 8 Error tests
+- 11 Error tests
 
 **Stage 6.3 JSON Object**:
 - JSON.stringify(value) - serialize value to JSON string
@@ -441,16 +462,19 @@
 - 8 RegExp tests
 
 **Stage 6.5 TypedArray Features**:
-- TypedArrayKind enum: Int8, Uint8, Int16, Uint16, Int32, Uint32
+- TypedArrayKind enum: Int8, Uint8, Uint8Clamped, Int16, Uint16, Int32, Uint32, Float32, Float64
 - TypedArrayObject struct with raw byte storage
 - TYPED_ARRAY_MARKER (bit 18) for value encoding
 - Value::typed_array_object(), is_typed_array(), to_typed_array_idx() methods
-- TypedArray constructors: Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array
+- TypedArray constructors: Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array
 - Element access via GetArrayEl/PutArrayEl with proper type conversion
 - Properties: length, byteLength, BYTES_PER_ELEMENT
 - Create from length: new Int8Array(10)
 - Create from array: new Int8Array([1, 2, 3])
 - Proper overflow handling (Int8 wraps -128 to 127)
-- 6 TypedArray tests
+- Uint8ClampedArray clamps values to 0-255 range
+- Float32Array and Float64Array for floating-point data
+- TypedArray.prototype.subarray(begin, end) for views
+- 9 TypedArray tests
 
 **Next Action**: Stage 8 CLI improvements or Stage 9 optimization

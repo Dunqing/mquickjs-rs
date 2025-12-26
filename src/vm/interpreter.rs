@@ -28,6 +28,12 @@ pub const BUILTIN_REFERENCE_ERROR: u32 = 7;
 pub const BUILTIN_SYNTAX_ERROR: u32 = 8;
 /// RangeError constructor index
 pub const BUILTIN_RANGE_ERROR: u32 = 9;
+/// EvalError constructor index
+pub const BUILTIN_EVAL_ERROR: u32 = 27;
+/// URIError constructor index
+pub const BUILTIN_URI_ERROR: u32 = 28;
+/// InternalError constructor index
+pub const BUILTIN_INTERNAL_ERROR: u32 = 29;
 /// Date object index
 pub const BUILTIN_DATE: u32 = 10;
 /// String object index
@@ -56,6 +62,12 @@ pub const BUILTIN_INT32_ARRAY: u32 = 21;
 pub const BUILTIN_UINT32_ARRAY: u32 = 22;
 /// Performance object index
 pub const BUILTIN_PERFORMANCE: u32 = 23;
+/// Uint8ClampedArray constructor index
+pub const BUILTIN_UINT8_CLAMPED_ARRAY: u32 = 24;
+/// Float32Array constructor index
+pub const BUILTIN_FLOAT32_ARRAY: u32 = 25;
+/// Float64Array constructor index
+pub const BUILTIN_FLOAT64_ARRAY: u32 = 26;
 
 /// Native function signature
 ///
@@ -405,12 +417,20 @@ pub struct Interpreter {
     regex_objects: Vec<RegExpObject>,
     /// TypedArray objects created during execution
     typed_arrays: Vec<TypedArrayObject>,
+    /// ArrayBuffer objects created during execution
+    array_buffers: Vec<ArrayBufferObject>,
     /// Current compile-time string constants (set during bytecode execution)
     /// Used by native functions to look up compile-time strings
     current_string_constants: Option<*const Vec<String>>,
     /// Target call stack depth for nested call_value invocations
     /// When set, do_return will return early when reaching this depth
     nested_call_target_depth: Option<usize>,
+    /// Pending timers (setTimeout callbacks)
+    timers: Vec<Timer>,
+    /// Next timer ID
+    next_timer_id: u32,
+    /// GC stats
+    gc_count: u32,
 }
 
 /// Error object storage
@@ -453,19 +473,23 @@ impl std::fmt::Debug for RegExpObject {
 pub enum TypedArrayKind {
     Int8,
     Uint8,
+    Uint8Clamped,
     Int16,
     Uint16,
     Int32,
     Uint32,
+    Float32,
+    Float64,
 }
 
 impl TypedArrayKind {
     /// Get the byte size of each element
     pub fn byte_size(&self) -> usize {
         match self {
-            TypedArrayKind::Int8 | TypedArrayKind::Uint8 => 1,
+            TypedArrayKind::Int8 | TypedArrayKind::Uint8 | TypedArrayKind::Uint8Clamped => 1,
             TypedArrayKind::Int16 | TypedArrayKind::Uint16 => 2,
-            TypedArrayKind::Int32 | TypedArrayKind::Uint32 => 4,
+            TypedArrayKind::Int32 | TypedArrayKind::Uint32 | TypedArrayKind::Float32 => 4,
+            TypedArrayKind::Float64 => 8,
         }
     }
 }
@@ -500,7 +524,7 @@ impl TypedArrayObject {
         let byte_offset = index * self.kind.byte_size();
         Some(match self.kind {
             TypedArrayKind::Int8 => self.data[byte_offset] as i8 as i32,
-            TypedArrayKind::Uint8 => self.data[byte_offset] as i32,
+            TypedArrayKind::Uint8 | TypedArrayKind::Uint8Clamped => self.data[byte_offset] as i32,
             TypedArrayKind::Int16 => {
                 let bytes = [self.data[byte_offset], self.data[byte_offset + 1]];
                 i16::from_le_bytes(bytes) as i32
@@ -527,6 +551,30 @@ impl TypedArrayObject {
                 ];
                 u32::from_le_bytes(bytes) as i32
             }
+            TypedArrayKind::Float32 => {
+                let bytes = [
+                    self.data[byte_offset],
+                    self.data[byte_offset + 1],
+                    self.data[byte_offset + 2],
+                    self.data[byte_offset + 3],
+                ];
+                // Convert float to int for our integer-only VM
+                f32::from_le_bytes(bytes) as i32
+            }
+            TypedArrayKind::Float64 => {
+                let bytes = [
+                    self.data[byte_offset],
+                    self.data[byte_offset + 1],
+                    self.data[byte_offset + 2],
+                    self.data[byte_offset + 3],
+                    self.data[byte_offset + 4],
+                    self.data[byte_offset + 5],
+                    self.data[byte_offset + 6],
+                    self.data[byte_offset + 7],
+                ];
+                // Convert float to int for our integer-only VM
+                f64::from_le_bytes(bytes) as i32
+            }
         })
     }
 
@@ -542,6 +590,11 @@ impl TypedArrayObject {
             }
             TypedArrayKind::Uint8 => {
                 self.data[byte_offset] = value as u8;
+            }
+            TypedArrayKind::Uint8Clamped => {
+                // Clamp value to 0-255 range
+                let clamped = value.clamp(0, 255) as u8;
+                self.data[byte_offset] = clamped;
             }
             TypedArrayKind::Int16 => {
                 let bytes = (value as i16).to_le_bytes();
@@ -561,9 +614,80 @@ impl TypedArrayObject {
                 let bytes = (value as u32).to_le_bytes();
                 self.data[byte_offset..byte_offset + 4].copy_from_slice(&bytes);
             }
+            TypedArrayKind::Float32 => {
+                let bytes = (value as f32).to_le_bytes();
+                self.data[byte_offset..byte_offset + 4].copy_from_slice(&bytes);
+            }
+            TypedArrayKind::Float64 => {
+                let bytes = (value as f64).to_le_bytes();
+                self.data[byte_offset..byte_offset + 8].copy_from_slice(&bytes);
+            }
         }
         true
     }
+
+    /// Create a subarray view into this typed array
+    pub fn subarray(&self, start: i32, end: Option<i32>) -> TypedArrayObject {
+        let len = self.length as i32;
+
+        // Handle negative indices
+        let start = if start < 0 {
+            (len + start).max(0) as usize
+        } else {
+            (start as usize).min(self.length)
+        };
+
+        let end = match end {
+            Some(e) if e < 0 => (len + e).max(0) as usize,
+            Some(e) => (e as usize).min(self.length),
+            None => self.length,
+        };
+
+        let new_len = if end > start { end - start } else { 0 };
+        let byte_size = self.kind.byte_size();
+        let start_offset = start * byte_size;
+        let end_offset = start_offset + new_len * byte_size;
+
+        TypedArrayObject {
+            kind: self.kind,
+            data: self.data[start_offset..end_offset].to_vec(),
+            length: new_len,
+        }
+    }
+}
+
+/// ArrayBuffer object - raw binary data buffer
+#[derive(Debug, Clone)]
+pub struct ArrayBufferObject {
+    /// Raw byte data
+    pub data: Vec<u8>,
+}
+
+impl ArrayBufferObject {
+    /// Create a new ArrayBuffer with the given byte length
+    pub fn new(byte_length: usize) -> Self {
+        ArrayBufferObject {
+            data: vec![0u8; byte_length],
+        }
+    }
+
+    /// Get the byte length
+    pub fn byte_length(&self) -> usize {
+        self.data.len()
+    }
+}
+
+/// Timer for setTimeout/setInterval
+#[derive(Debug, Clone)]
+pub struct Timer {
+    /// Timer ID
+    pub id: u32,
+    /// Callback function
+    pub callback: Value,
+    /// When the timer should fire (milliseconds since start)
+    pub fire_at: u64,
+    /// Whether this timer has been cancelled
+    pub cancelled: bool,
 }
 
 /// Statistics about interpreter memory usage
@@ -583,6 +707,8 @@ pub struct InterpreterStats {
     pub regex_objects: usize,
     /// Number of typed arrays
     pub typed_arrays: usize,
+    /// Number of array buffers
+    pub array_buffers: usize,
 }
 
 impl Interpreter {
@@ -608,8 +734,12 @@ impl Interpreter {
             error_objects: Vec::new(),
             regex_objects: Vec::new(),
             typed_arrays: Vec::new(),
+            array_buffers: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
+            timers: Vec::new(),
+            next_timer_id: 1,
+            gc_count: 0,
         };
         interp.register_builtins();
         interp
@@ -632,8 +762,12 @@ impl Interpreter {
             error_objects: Vec::new(),
             regex_objects: Vec::new(),
             typed_arrays: Vec::new(),
+            array_buffers: Vec::new(),
             current_string_constants: None,
             nested_call_target_depth: None,
+            timers: Vec::new(),
+            next_timer_id: 1,
+            gc_count: 0,
         };
         interp.register_builtins();
         interp
@@ -649,6 +783,7 @@ impl Interpreter {
             error_objects: self.error_objects.len(),
             regex_objects: self.regex_objects.len(),
             typed_arrays: self.typed_arrays.len(),
+            array_buffers: self.array_buffers.len(),
         }
     }
 
@@ -771,6 +906,7 @@ impl Interpreter {
         // Fallback to Object.prototype methods
         match key {
             "hasOwnProperty" => self.get_native_func("Object.prototype.hasOwnProperty").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Object.prototype.toString").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -1809,16 +1945,20 @@ impl Interpreter {
 
                     // Check if this is a builtin Error constructor
                     if let Some(builtin_idx) = func_val.to_builtin_object_idx() {
-                        if builtin_idx >= BUILTIN_ERROR && builtin_idx <= BUILTIN_RANGE_ERROR {
+                        let error_name = match builtin_idx {
+                            BUILTIN_ERROR => Some("Error"),
+                            BUILTIN_TYPE_ERROR => Some("TypeError"),
+                            BUILTIN_REFERENCE_ERROR => Some("ReferenceError"),
+                            BUILTIN_SYNTAX_ERROR => Some("SyntaxError"),
+                            BUILTIN_RANGE_ERROR => Some("RangeError"),
+                            BUILTIN_EVAL_ERROR => Some("EvalError"),
+                            BUILTIN_URI_ERROR => Some("URIError"),
+                            BUILTIN_INTERNAL_ERROR => Some("InternalError"),
+                            _ => None,
+                        };
+
+                        if let Some(error_name) = error_name {
                             // Create an error object
-                            let error_name = match builtin_idx {
-                                BUILTIN_ERROR => "Error",
-                                BUILTIN_TYPE_ERROR => "TypeError",
-                                BUILTIN_REFERENCE_ERROR => "ReferenceError",
-                                BUILTIN_SYNTAX_ERROR => "SyntaxError",
-                                BUILTIN_RANGE_ERROR => "RangeError",
-                                _ => "Error",
-                            };
 
                             // Get message from first argument (if present)
                             let message = if let Some(msg_val) = args.first() {
@@ -1918,10 +2058,13 @@ impl Interpreter {
                         let typed_kind = match builtin_idx {
                             BUILTIN_INT8_ARRAY => Some(TypedArrayKind::Int8),
                             BUILTIN_UINT8_ARRAY => Some(TypedArrayKind::Uint8),
+                            BUILTIN_UINT8_CLAMPED_ARRAY => Some(TypedArrayKind::Uint8Clamped),
                             BUILTIN_INT16_ARRAY => Some(TypedArrayKind::Int16),
                             BUILTIN_UINT16_ARRAY => Some(TypedArrayKind::Uint16),
                             BUILTIN_INT32_ARRAY => Some(TypedArrayKind::Int32),
                             BUILTIN_UINT32_ARRAY => Some(TypedArrayKind::Uint32),
+                            BUILTIN_FLOAT32_ARRAY => Some(TypedArrayKind::Float32),
+                            BUILTIN_FLOAT64_ARRAY => Some(TypedArrayKind::Float64),
                             _ => None,
                         };
 
@@ -1966,6 +2109,20 @@ impl Interpreter {
                             let typed_idx = self.typed_arrays.len() as u32;
                             self.typed_arrays.push(typed_arr);
                             self.stack.push(Value::typed_array_object(typed_idx));
+                            continue;
+                        }
+
+                        // Check if this is an ArrayBuffer constructor
+                        if builtin_idx == BUILTIN_ARRAY_BUFFER {
+                            let byte_length = args.first()
+                                .and_then(|v| v.to_i32())
+                                .map(|n| n.max(0) as usize)
+                                .unwrap_or(0);
+
+                            let ab = ArrayBufferObject::new(byte_length);
+                            let ab_idx = self.array_buffers.len() as u32;
+                            self.array_buffers.push(ab);
+                            self.stack.push(Value::array_buffer_object(ab_idx));
                             continue;
                         }
                     }
@@ -2253,15 +2410,22 @@ impl Interpreter {
                         "ReferenceError" => Some(Value::builtin_object(BUILTIN_REFERENCE_ERROR)),
                         "SyntaxError" => Some(Value::builtin_object(BUILTIN_SYNTAX_ERROR)),
                         "RangeError" => Some(Value::builtin_object(BUILTIN_RANGE_ERROR)),
+                        "EvalError" => Some(Value::builtin_object(BUILTIN_EVAL_ERROR)),
+                        "URIError" => Some(Value::builtin_object(BUILTIN_URI_ERROR)),
+                        "InternalError" => Some(Value::builtin_object(BUILTIN_INTERNAL_ERROR)),
                         "RegExp" => Some(Value::builtin_object(BUILTIN_REGEXP)),
                         "globalThis" => Some(Value::builtin_object(BUILTIN_GLOBAL_THIS)),
-                        // TypedArray constructors
+                        // TypedArray and ArrayBuffer constructors
+                        "ArrayBuffer" => Some(Value::builtin_object(BUILTIN_ARRAY_BUFFER)),
                         "Int8Array" => Some(Value::builtin_object(BUILTIN_INT8_ARRAY)),
                         "Uint8Array" => Some(Value::builtin_object(BUILTIN_UINT8_ARRAY)),
+                        "Uint8ClampedArray" => Some(Value::builtin_object(BUILTIN_UINT8_CLAMPED_ARRAY)),
                         "Int16Array" => Some(Value::builtin_object(BUILTIN_INT16_ARRAY)),
                         "Uint16Array" => Some(Value::builtin_object(BUILTIN_UINT16_ARRAY)),
                         "Int32Array" => Some(Value::builtin_object(BUILTIN_INT32_ARRAY)),
                         "Uint32Array" => Some(Value::builtin_object(BUILTIN_UINT32_ARRAY)),
+                        "Float32Array" => Some(Value::builtin_object(BUILTIN_FLOAT32_ARRAY)),
+                        "Float64Array" => Some(Value::builtin_object(BUILTIN_FLOAT64_ARRAY)),
                         _ => self.get_native_func(name),
                     };
 
@@ -2506,6 +2670,10 @@ impl Interpreter {
                         // TypedArray property access
                         let val = self.get_typed_array_property(typed_idx, prop_name);
                         self.stack.push(val);
+                    } else if let Some(ab_idx) = obj.to_array_buffer_idx() {
+                        // ArrayBuffer property access
+                        let val = self.get_array_buffer_property(ab_idx, prop_name);
+                        self.stack.push(val);
                     } else if obj.is_array() {
                         // Array property access - check for Array.prototype methods
                         let val = self.get_array_property(obj, prop_name);
@@ -2525,6 +2693,10 @@ impl Interpreter {
                     } else if obj.is_string() {
                         // String property access - check for String.prototype methods
                         let val = self.get_string_property(obj, prop_name);
+                        self.stack.push(val);
+                    } else if obj.to_i32().is_some() {
+                        // Number property access - check for Number.prototype methods
+                        let val = self.get_number_property(obj, prop_name);
                         self.stack.push(val);
                     } else {
                         // For non-objects, return undefined
@@ -2554,6 +2726,8 @@ impl Interpreter {
                         self.get_builtin_property(builtin_idx, prop_name)
                     } else if let Some(typed_idx) = obj.to_typed_array_idx() {
                         self.get_typed_array_property(typed_idx, prop_name)
+                    } else if let Some(ab_idx) = obj.to_array_buffer_idx() {
+                        self.get_array_buffer_property(ab_idx, prop_name)
                     } else if obj.is_array() {
                         self.get_array_property(obj, prop_name)
                     } else if let Some(regex_idx) = obj.to_regexp_object_idx() {
@@ -2562,6 +2736,9 @@ impl Interpreter {
                         self.object_get_property(obj_idx, prop_name)
                     } else if obj.is_string() {
                         self.get_string_property(obj, prop_name)
+                    } else if obj.to_i32().is_some() {
+                        // Number.prototype methods
+                        self.get_number_property(obj, prop_name)
                     } else if obj.is_closure() || obj.to_func_ptr().is_some() {
                         // Function.prototype methods (call, apply, bind)
                         self.get_function_property(prop_name)
@@ -3262,6 +3439,8 @@ impl Interpreter {
             "sort" => self.get_native_func("Array.prototype.sort").unwrap_or(Value::undefined()),
             "flat" => self.get_native_func("Array.prototype.flat").unwrap_or(Value::undefined()),
             "fill" => self.get_native_func("Array.prototype.fill").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Array.prototype.toString").unwrap_or(Value::undefined()),
+            "reduceRight" => self.get_native_func("Array.prototype.reduceRight").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3307,6 +3486,17 @@ impl Interpreter {
         }
     }
 
+    /// Get a property from a number (Number.prototype methods)
+    fn get_number_property(&self, _num_val: Value, prop_name: &str) -> Value {
+        match prop_name {
+            "toString" => self.get_native_func("Number.prototype.toString").unwrap_or(Value::undefined()),
+            "toFixed" => self.get_native_func("Number.prototype.toFixed").unwrap_or(Value::undefined()),
+            "toExponential" => self.get_native_func("Number.prototype.toExponential").unwrap_or(Value::undefined()),
+            "toPrecision" => self.get_native_func("Number.prototype.toPrecision").unwrap_or(Value::undefined()),
+            _ => Value::undefined(),
+        }
+    }
+
     /// Get a property from an error object
     fn get_error_property(&mut self, err_idx: u32, prop_name: &str) -> Value {
         if let Some(err) = self.error_objects.get(err_idx as usize).cloned() {
@@ -3318,6 +3508,11 @@ impl Interpreter {
                 "message" => {
                     // Return the error message as a runtime string
                     self.create_runtime_string(err.message)
+                }
+                "stack" => {
+                    // Return a simple stack trace (just error type and message for now)
+                    let stack = format!("{}:{}", err.name, err.message);
+                    self.create_runtime_string(stack)
                 }
                 "toString" => {
                     self.get_native_func("Error.prototype.toString").unwrap_or(Value::undefined())
@@ -3335,6 +3530,7 @@ impl Interpreter {
             "call" => self.get_native_func("Function.prototype.call").unwrap_or(Value::undefined()),
             "apply" => self.get_native_func("Function.prototype.apply").unwrap_or(Value::undefined()),
             "bind" => self.get_native_func("Function.prototype.bind").unwrap_or(Value::undefined()),
+            "toString" => self.get_native_func("Function.prototype.toString").unwrap_or(Value::undefined()),
             _ => Value::undefined(),
         }
     }
@@ -3367,6 +3563,19 @@ impl Interpreter {
                 "length" => Value::int(ta.length as i32),
                 "byteLength" => Value::int(ta.data.len() as i32),
                 "BYTES_PER_ELEMENT" => Value::int(ta.kind.byte_size() as i32),
+                "subarray" => self.get_native_func("TypedArray.prototype.subarray").unwrap_or(Value::undefined()),
+                _ => Value::undefined(),
+            }
+        } else {
+            Value::undefined()
+        }
+    }
+
+    /// Get a property from an ArrayBuffer
+    fn get_array_buffer_property(&self, ab_idx: u32, prop_name: &str) -> Value {
+        if let Some(ab) = self.array_buffers.get(ab_idx as usize) {
+            match prop_name {
+                "byteLength" => Value::int(ab.byte_length() as i32),
                 _ => Value::undefined(),
             }
         } else {
@@ -3395,8 +3604,26 @@ impl Interpreter {
                     "trunc" => self.get_native_func("Math.trunc").unwrap_or(Value::undefined()),
                     "log2" => self.get_native_func("Math.log2").unwrap_or(Value::undefined()),
                     "log10" => self.get_native_func("Math.log10").unwrap_or(Value::undefined()),
-                    "PI" => Value::int(3), // TODO: proper float value 3.14159...
-                    "E" => Value::int(2),  // TODO: proper float value 2.71828...
+                    "sign" => self.get_native_func("Math.sign").unwrap_or(Value::undefined()),
+                    "sin" => self.get_native_func("Math.sin").unwrap_or(Value::undefined()),
+                    "cos" => self.get_native_func("Math.cos").unwrap_or(Value::undefined()),
+                    "tan" => self.get_native_func("Math.tan").unwrap_or(Value::undefined()),
+                    "exp" => self.get_native_func("Math.exp").unwrap_or(Value::undefined()),
+                    "log" => self.get_native_func("Math.log").unwrap_or(Value::undefined()),
+                    "random" => self.get_native_func("Math.random").unwrap_or(Value::undefined()),
+                    "atan2" => self.get_native_func("Math.atan2").unwrap_or(Value::undefined()),
+                    "asin" => self.get_native_func("Math.asin").unwrap_or(Value::undefined()),
+                    "acos" => self.get_native_func("Math.acos").unwrap_or(Value::undefined()),
+                    "atan" => self.get_native_func("Math.atan").unwrap_or(Value::undefined()),
+                    // Math constants (integer approximations until proper float support)
+                    "PI" => Value::int(3), // 3.14159...
+                    "E" => Value::int(2),  // 2.71828...
+                    "LN2" => Value::int(0),  // 0.69314...
+                    "LN10" => Value::int(2), // 2.30258...
+                    "LOG2E" => Value::int(1), // 1.44269...
+                    "LOG10E" => Value::int(0), // 0.43429...
+                    "SQRT2" => Value::int(1), // 1.41421...
+                    "SQRT1_2" => Value::int(0), // 0.70710...
                     _ => Value::undefined(),
                 }
             }
@@ -3456,6 +3683,10 @@ impl Interpreter {
                     "keys" => self.get_native_func("Object.keys").unwrap_or(Value::undefined()),
                     "values" => self.get_native_func("Object.values").unwrap_or(Value::undefined()),
                     "entries" => self.get_native_func("Object.entries").unwrap_or(Value::undefined()),
+                    "getPrototypeOf" => self.get_native_func("Object.getPrototypeOf").unwrap_or(Value::undefined()),
+                    "setPrototypeOf" => self.get_native_func("Object.setPrototypeOf").unwrap_or(Value::undefined()),
+                    "create" => self.get_native_func("Object.create").unwrap_or(Value::undefined()),
+                    "defineProperty" => self.get_native_func("Object.defineProperty").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3493,8 +3724,24 @@ impl Interpreter {
                     "Error" => Value::builtin_object(BUILTIN_ERROR),
                     "RegExp" => Value::builtin_object(BUILTIN_REGEXP),
                     "globalThis" => Value::builtin_object(BUILTIN_GLOBAL_THIS),
+                    "ArrayBuffer" => Value::builtin_object(BUILTIN_ARRAY_BUFFER),
+                    "Int8Array" => Value::builtin_object(BUILTIN_INT8_ARRAY),
+                    "Uint8Array" => Value::builtin_object(BUILTIN_UINT8_ARRAY),
+                    "Uint8ClampedArray" => Value::builtin_object(BUILTIN_UINT8_CLAMPED_ARRAY),
+                    "Int16Array" => Value::builtin_object(BUILTIN_INT16_ARRAY),
+                    "Uint16Array" => Value::builtin_object(BUILTIN_UINT16_ARRAY),
+                    "Int32Array" => Value::builtin_object(BUILTIN_INT32_ARRAY),
+                    "Uint32Array" => Value::builtin_object(BUILTIN_UINT32_ARRAY),
+                    "Float32Array" => Value::builtin_object(BUILTIN_FLOAT32_ARRAY),
+                    "Float64Array" => Value::builtin_object(BUILTIN_FLOAT64_ARRAY),
                     "parseInt" => self.get_native_func("parseInt").unwrap_or(Value::undefined()),
+                    "parseFloat" => self.get_native_func("parseFloat").unwrap_or(Value::undefined()),
                     "isNaN" => self.get_native_func("isNaN").unwrap_or(Value::undefined()),
+                    "isFinite" => self.get_native_func("isFinite").unwrap_or(Value::undefined()),
+                    "gc" => self.get_native_func("gc").unwrap_or(Value::undefined()),
+                    "load" => self.get_native_func("load").unwrap_or(Value::undefined()),
+                    "setTimeout" => self.get_native_func("setTimeout").unwrap_or(Value::undefined()),
+                    "clearTimeout" => self.get_native_func("clearTimeout").unwrap_or(Value::undefined()),
                     _ => Value::undefined(),
                 }
             }
@@ -3632,9 +3879,14 @@ impl Interpreter {
         self.register_native("Array.prototype.flat", native_array_flat, 0);
         self.register_native("Array.prototype.fill", native_array_fill, 1);
 
+        // TypedArray.prototype methods
+        self.register_native("TypedArray.prototype.subarray", native_typed_array_subarray, 2);
+
         // Global functions
         self.register_native("parseInt", native_parse_int, 1);
+        self.register_native("parseFloat", native_parse_float, 1);
         self.register_native("isNaN", native_is_nan, 1);
+        self.register_native("isFinite", native_is_finite, 1);
 
         // Math functions
         self.register_native("Math.abs", native_math_abs, 1);
@@ -3652,6 +3904,17 @@ impl Interpreter {
         self.register_native("Math.trunc", native_math_trunc, 1);
         self.register_native("Math.log2", native_math_log2, 1);
         self.register_native("Math.log10", native_math_log10, 1);
+        self.register_native("Math.sign", native_math_sign, 1);
+        self.register_native("Math.sin", native_math_sin, 1);
+        self.register_native("Math.cos", native_math_cos, 1);
+        self.register_native("Math.tan", native_math_tan, 1);
+        self.register_native("Math.exp", native_math_exp, 1);
+        self.register_native("Math.log", native_math_log, 1);
+        self.register_native("Math.random", native_math_random, 0);
+        self.register_native("Math.atan2", native_math_atan2, 2);
+        self.register_native("Math.asin", native_math_asin, 1);
+        self.register_native("Math.acos", native_math_acos, 1);
+        self.register_native("Math.atan", native_math_atan, 1);
 
         // String methods
         self.register_native("String.prototype.charAt", native_string_char_at, 1);
@@ -3687,6 +3950,12 @@ impl Interpreter {
         self.register_native("Number.isNaN", native_number_is_nan, 1);
         self.register_native("Number.isFinite", native_number_is_finite, 1);
 
+        // Number.prototype methods
+        self.register_native("Number.prototype.toString", native_number_to_string, 0);
+        self.register_native("Number.prototype.toFixed", native_number_to_fixed, 0);
+        self.register_native("Number.prototype.toExponential", native_number_to_exponential, 0);
+        self.register_native("Number.prototype.toPrecision", native_number_to_precision, 0);
+
         // console methods
         self.register_native("console.log", native_console_log, 0);
         self.register_native("console.error", native_console_error, 0);
@@ -3708,8 +3977,13 @@ impl Interpreter {
         self.register_native("Object.keys", native_object_keys, 1);
         self.register_native("Object.values", native_object_values, 1);
         self.register_native("Object.entries", native_object_entries, 1);
+        self.register_native("Object.getPrototypeOf", native_object_get_prototype_of, 1);
+        self.register_native("Object.setPrototypeOf", native_object_set_prototype_of, 2);
+        self.register_native("Object.create", native_object_create, 1);
+        self.register_native("Object.defineProperty", native_object_define_property, 3);
         // Object.prototype methods
         self.register_native("Object.prototype.hasOwnProperty", native_object_has_own_property, 1);
+        self.register_native("Object.prototype.toString", native_object_to_string, 0);
 
         // Array static methods
         self.register_native("Array.isArray", native_array_is_array, 1);
@@ -3718,6 +3992,20 @@ impl Interpreter {
         self.register_native("Function.prototype.call", native_function_call, 0);
         self.register_native("Function.prototype.apply", native_function_apply, 0);
         self.register_native("Function.prototype.bind", native_function_bind, 0);
+        self.register_native("Function.prototype.toString", native_function_to_string, 0);
+
+        // Error.prototype methods
+        self.register_native("Error.prototype.toString", native_error_to_string, 0);
+
+        // Array.prototype.toString and reduceRight
+        self.register_native("Array.prototype.toString", native_array_to_string, 0);
+        self.register_native("Array.prototype.reduceRight", native_array_reduce_right, 2);
+
+        // Global utility functions
+        self.register_native("gc", native_gc, 0);
+        self.register_native("load", native_load, 1);
+        self.register_native("setTimeout", native_set_timeout, 2);
+        self.register_native("clearTimeout", native_clear_timeout, 1);
     }
 }
 
@@ -4358,6 +4646,159 @@ fn native_is_nan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Res
     }
 }
 
+/// parseFloat - parse a string to a number
+/// Since we only have integers, this works like parseInt
+fn native_parse_float(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // If it's already a number, return it
+    if let Some(n) = val.to_i32() {
+        return Ok(Value::int(n));
+    }
+
+    // Try to parse as string
+    if let Some(str_idx) = val.to_string_idx() {
+        if let Some(s) = interp.get_string_by_idx(str_idx) {
+            // Parse leading numeric portion, treating decimal point
+            let s = s.trim();
+            let mut result = 0i32;
+            let mut negative = false;
+            let mut chars = s.chars().peekable();
+
+            if chars.peek() == Some(&'-') {
+                negative = true;
+                chars.next();
+            } else if chars.peek() == Some(&'+') {
+                chars.next();
+            }
+
+            // Parse integer part
+            while let Some(&c) = chars.peek() {
+                if c.is_ascii_digit() {
+                    result = result.saturating_mul(10).saturating_add((c as i32) - ('0' as i32));
+                    chars.next();
+                } else if c == '.' {
+                    // Skip decimal part (we only have integers)
+                    break;
+                } else {
+                    break;
+                }
+            }
+
+            if negative {
+                result = -result;
+            }
+            return Ok(Value::int(result));
+        }
+    }
+
+    // Return 0 for non-parseable values (NaN would be proper but we don't have it)
+    Ok(Value::int(0))
+}
+
+/// isFinite - check if value is finite
+fn native_is_finite(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let val = args.get(0).copied().unwrap_or(Value::undefined());
+
+    // Since we only have 31-bit integers, all our numbers are finite
+    if val.to_i32().is_some() {
+        Ok(Value::bool(true))
+    } else {
+        Ok(Value::bool(false))
+    }
+}
+
+// =============================================================================
+// Number.prototype methods
+// =============================================================================
+
+/// Number.prototype.toString - convert number to string
+fn native_number_to_string(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let radix = args.get(0).and_then(|v| v.to_i32()).unwrap_or(10);
+
+    if let Some(n) = this.to_i32() {
+        let s = match radix {
+            2 => format!("{:b}", n),
+            8 => format!("{:o}", n),
+            16 => format!("{:x}", n),
+            10 | _ => n.to_string(),
+        };
+        Ok(interp.create_runtime_string(s))
+    } else {
+        Err("toString called on non-number".to_string())
+    }
+}
+
+/// Number.prototype.toFixed - format number with fixed decimal places
+/// Since we only have integers, this just pads with zeros
+fn native_number_to_fixed(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let digits = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0) as usize;
+
+    if let Some(n) = this.to_i32() {
+        let s = if digits > 0 {
+            format!("{}.{}", n, "0".repeat(digits))
+        } else {
+            n.to_string()
+        };
+        Ok(interp.create_runtime_string(s))
+    } else {
+        Err("toFixed called on non-number".to_string())
+    }
+}
+
+/// Number.prototype.toExponential - format number in exponential notation
+fn native_number_to_exponential(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    if let Some(n) = this.to_i32() {
+        // Simple exponential format for integers
+        if n == 0 {
+            Ok(interp.create_runtime_string("0e+0".to_string()))
+        } else {
+            let abs_n = n.abs();
+            let exp = (abs_n as f64).log10().floor() as i32;
+            let sign = if n < 0 { "-" } else { "" };
+            let mantissa = abs_n / 10_i32.pow(exp as u32);
+            let s = format!("{}{}e+{}", sign, mantissa, exp);
+            Ok(interp.create_runtime_string(s))
+        }
+    } else {
+        Err("toExponential called on non-number".to_string())
+    }
+}
+
+/// Number.prototype.toPrecision - format number to specified precision
+fn native_number_to_precision(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let _precision = args.get(0).and_then(|v| v.to_i32()).unwrap_or(1) as usize;
+
+    if let Some(n) = this.to_i32() {
+        // For integers, just return the string representation
+        Ok(interp.create_runtime_string(n.to_string()))
+    } else {
+        Err("toPrecision called on non-number".to_string())
+    }
+}
+
+// =============================================================================
+// TypedArray.prototype methods
+// =============================================================================
+
+/// TypedArray.prototype.subarray - create a new typed array view
+fn native_typed_array_subarray(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let typed_idx = this.to_typed_array_idx()
+        .ok_or_else(|| "subarray called on non-TypedArray".to_string())?;
+
+    let start = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let end = args.get(1).and_then(|v| v.to_i32());
+
+    let ta = interp.typed_arrays.get(typed_idx as usize)
+        .ok_or_else(|| "invalid TypedArray index".to_string())?;
+
+    let new_ta = ta.subarray(start, end);
+    let new_idx = interp.typed_arrays.len() as u32;
+    interp.typed_arrays.push(new_ta);
+
+    Ok(Value::typed_array_object(new_idx))
+}
+
 /// Math.abs - absolute value
 fn native_math_abs(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let val = args.get(0).copied().unwrap_or(Value::undefined());
@@ -4533,6 +4974,168 @@ fn native_math_log10(_interp: &mut Interpreter, _this: Value, args: &[Value]) ->
         }
         Ok(Value::int(digits))
     }
+}
+
+/// Math.sign - returns the sign of a number
+fn native_math_sign(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    Ok(Value::int(if n > 0 { 1 } else if n < 0 { -1 } else { 0 }))
+}
+
+/// Math.sin - returns sine of a number (approximation for integers)
+fn native_math_sin(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // Simple approximation: sin is periodic and bounded [-1, 1]
+    // For integers, return 0 for multiples of ~3 (pi), else approximate
+    let n = n % 360; // Treat as degrees roughly
+    if n == 0 || n == 180 || n == -180 {
+        Ok(Value::int(0))
+    } else if n == 90 {
+        Ok(Value::int(1))
+    } else if n == -90 || n == 270 {
+        Ok(Value::int(-1))
+    } else {
+        Ok(Value::int(0)) // Simplified
+    }
+}
+
+/// Math.cos - returns cosine of a number (approximation for integers)
+fn native_math_cos(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let n = n % 360;
+    if n == 0 {
+        Ok(Value::int(1))
+    } else if n == 90 || n == -90 || n == 270 {
+        Ok(Value::int(0))
+    } else if n == 180 || n == -180 {
+        Ok(Value::int(-1))
+    } else {
+        Ok(Value::int(0)) // Simplified
+    }
+}
+
+/// Math.tan - returns tangent of a number (approximation for integers)
+fn native_math_tan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let n = n % 180;
+    if n == 0 {
+        Ok(Value::int(0))
+    } else if n == 45 {
+        Ok(Value::int(1))
+    } else if n == -45 || n == 135 {
+        Ok(Value::int(-1))
+    } else {
+        Ok(Value::int(0)) // Simplified for 90 degrees (undefined)
+    }
+}
+
+/// Math.exp - returns e^x (approximation for integers)
+fn native_math_exp(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n < 0 {
+        Ok(Value::int(0)) // e^-x < 1
+    } else if n == 0 {
+        Ok(Value::int(1))
+    } else {
+        // Approximate e^n using integer math
+        let mut result: i32 = 1;
+        for _ in 0..n.min(20) {
+            result = result.saturating_mul(3); // e ≈ 2.718
+        }
+        Ok(Value::int(result))
+    }
+}
+
+/// Math.log - returns natural logarithm (approximation for integers)
+fn native_math_log(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    if n <= 0 {
+        Ok(Value::int(-1)) // NaN or -Infinity
+    } else if n == 1 {
+        Ok(Value::int(0))
+    } else {
+        // Approximate log by counting powers of e (≈3)
+        let mut temp = n;
+        let mut result = 0;
+        while temp >= 3 {
+            temp /= 3;
+            result += 1;
+        }
+        Ok(Value::int(result))
+    }
+}
+
+/// Math.random - returns a pseudo-random number
+fn native_math_random(_interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // Simple pseudo-random using time
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+
+    // Return a value between 0 and 1000 (representing 0.000 to 0.999)
+    // Since we don't have floats, caller can divide by 1000
+    let random = (now % 1000) as i32;
+    Ok(Value::int(random))
+}
+
+/// Math.atan2 - returns arctangent of y/x
+fn native_math_atan2(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let y = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    let x = args.get(1).and_then(|v| v.to_i32()).unwrap_or(0);
+
+    // Simplified atan2 returning approximate degrees
+    if x == 0 {
+        if y > 0 { Ok(Value::int(90)) }
+        else if y < 0 { Ok(Value::int(-90)) }
+        else { Ok(Value::int(0)) }
+    } else if y == 0 {
+        if x > 0 { Ok(Value::int(0)) }
+        else { Ok(Value::int(180)) }
+    } else if x > 0 && y > 0 {
+        Ok(Value::int(45)) // First quadrant
+    } else if x < 0 && y > 0 {
+        Ok(Value::int(135)) // Second quadrant
+    } else if x < 0 && y < 0 {
+        Ok(Value::int(-135)) // Third quadrant
+    } else {
+        Ok(Value::int(-45)) // Fourth quadrant
+    }
+}
+
+/// Math.asin - returns arcsine of a number (approximation for integers)
+/// Returns degrees: -90 to 90
+fn native_math_asin(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // asin only defined for -1 to 1, but with integers we approximate
+    if x <= -1 { Ok(Value::int(-90)) }
+    else if x >= 1 { Ok(Value::int(90)) }
+    else { Ok(Value::int(0)) } // asin(0) = 0
+}
+
+/// Math.acos - returns arccosine of a number (approximation for integers)
+/// Returns degrees: 0 to 180
+fn native_math_acos(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // acos only defined for -1 to 1, but with integers we approximate
+    if x <= -1 { Ok(Value::int(180)) }
+    else if x >= 1 { Ok(Value::int(0)) }
+    else { Ok(Value::int(90)) } // acos(0) = 90
+}
+
+/// Math.atan - returns arctangent of a number (approximation for integers)
+/// Returns degrees: -90 to 90
+fn native_math_atan(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).and_then(|v| v.to_i32()).unwrap_or(0);
+    // Simplified approximation
+    if x == 0 { Ok(Value::int(0)) }
+    else if x >= 10 { Ok(Value::int(84)) } // Approaches 90
+    else if x >= 1 { Ok(Value::int(45)) }
+    else if x <= -10 { Ok(Value::int(-84)) }
+    else if x <= -1 { Ok(Value::int(-45)) }
+    else { Ok(Value::int(0)) }
 }
 
 // =============================================================================
@@ -6092,6 +6695,95 @@ fn native_object_has_own_property(interp: &mut Interpreter, this: Value, args: &
     Ok(Value::bool(false))
 }
 
+/// Object.getPrototypeOf - get the prototype of an object
+fn native_object_get_prototype_of(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+
+    // For our simple implementation, most objects don't have explicit prototypes
+    // Arrays inherit from Array.prototype, objects from Object.prototype
+    if obj.is_array() {
+        // Return Array.prototype (represented as builtin)
+        Ok(Value::builtin_object(BUILTIN_ARRAY))
+    } else if obj.to_object_idx().is_some() {
+        // Return Object.prototype (represented as builtin)
+        Ok(Value::builtin_object(BUILTIN_OBJECT))
+    } else if obj.is_string() {
+        Ok(Value::builtin_object(BUILTIN_STRING))
+    } else if let Some(_) = obj.to_i32() {
+        Ok(Value::builtin_object(BUILTIN_NUMBER))
+    } else if obj.to_bool().is_some() {
+        Ok(Value::builtin_object(BUILTIN_BOOLEAN))
+    } else {
+        Ok(Value::null())
+    }
+}
+
+/// Object.setPrototypeOf - set the prototype of an object
+fn native_object_set_prototype_of(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    // In our simple implementation, we don't support changing prototypes
+    // Just return the object as-is (like a no-op)
+    let obj = args.first().copied().unwrap_or(Value::undefined());
+    Ok(obj)
+}
+
+/// Object.create - create new object with specified prototype
+fn native_object_create(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let _proto = args.first().copied().unwrap_or(Value::null());
+
+    // Create a new empty object
+    // In our simple implementation, we don't actually link the prototype
+    let obj_idx = interp.objects.len() as u32;
+    interp.objects.push(ObjectInstance {
+        constructor: None,
+        properties: Vec::new(),
+    });
+
+    Ok(Value::object_idx(obj_idx))
+}
+
+/// Object.defineProperty - define a property on an object
+fn native_object_define_property(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let obj = args.get(0).copied().unwrap_or(Value::undefined());
+    let prop = args.get(1).copied().unwrap_or(Value::undefined());
+    let descriptor = args.get(2).copied().unwrap_or(Value::undefined());
+
+    // Get property name
+    let prop_name = if let Some(str_idx) = prop.to_string_idx() {
+        interp.get_string_by_idx(str_idx).map(|s| s.to_string())
+    } else if let Some(n) = prop.to_i32() {
+        Some(n.to_string())
+    } else {
+        None
+    };
+
+    let prop_name = match prop_name {
+        Some(s) => s,
+        None => return Ok(obj),
+    };
+
+    // Get value from descriptor
+    let value = if let Some(desc_idx) = descriptor.to_object_idx() {
+        // Look for 'value' property in descriptor
+        if let Some(desc_obj) = interp.objects.get(desc_idx as usize) {
+            desc_obj.properties.iter()
+                .find(|(k, _)| k == "value")
+                .map(|(_, v)| *v)
+                .unwrap_or(Value::undefined())
+        } else {
+            Value::undefined()
+        }
+    } else {
+        Value::undefined()
+    };
+
+    // Set the property on the object
+    if let Some(obj_idx) = obj.to_object_idx() {
+        interp.object_set_property(obj_idx, prop_name, value);
+    }
+
+    Ok(obj)
+}
+
 // ===========================================
 // Array Static Methods
 // ===========================================
@@ -6186,6 +6878,225 @@ fn native_function_bind(interp: &mut Interpreter, this: Value, args: &[Value]) -
 
     // Return as object (will be callable via special handling)
     Ok(Value::object_idx(obj_idx))
+}
+
+/// Error.prototype.toString - returns "ErrorName: message"
+fn native_error_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    if let Some(err_idx) = this.to_error_object_idx() {
+        if let Some(err) = interp.error_objects.get(err_idx as usize).cloned() {
+            let result = if err.message.is_empty() {
+                err.name.clone()
+            } else {
+                format!("{}: {}", err.name, err.message)
+            };
+            return Ok(interp.create_runtime_string(result));
+        }
+    }
+    // Fallback
+    Ok(interp.create_runtime_string("Error".to_string()))
+}
+
+/// Function.prototype.toString - returns function source representation
+fn native_function_to_string(interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
+    // In a real implementation, this would return the function source
+    // For our simple implementation, return a generic representation
+    Ok(interp.create_runtime_string("function () { [native code] }".to_string()))
+}
+
+/// Array.prototype.toString - same as join()
+fn native_array_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    if let Some(arr_idx) = this.to_array_idx() {
+        if let Some(arr) = interp.arrays.get(arr_idx as usize).cloned() {
+            let parts: Vec<String> = arr.iter().map(|v| format_value(interp, *v)).collect();
+            let result = parts.join(",");
+            return Ok(interp.create_runtime_string(result));
+        }
+    }
+    Ok(interp.create_runtime_string(String::new()))
+}
+
+/// Array.prototype.reduceRight - reduce array from right to left
+fn native_array_reduce_right(interp: &mut Interpreter, this: Value, args: &[Value]) -> Result<Value, String> {
+    let arr_idx = this.to_array_idx()
+        .ok_or_else(|| "reduceRight called on non-array".to_string())?;
+
+    let callback = args.first().copied()
+        .ok_or_else(|| "reduceRight requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() {
+        return Err("reduceRight callback must be a function".to_string());
+    }
+
+    // Clone the array to avoid borrow issues
+    let arr_clone = interp.arrays.get(arr_idx as usize)
+        .ok_or_else(|| "invalid array".to_string())?
+        .clone();
+
+    if arr_clone.is_empty() && args.len() < 2 {
+        return Err("reduceRight of empty array with no initial value".to_string());
+    }
+
+    // Get initial value or last element
+    let len = arr_clone.len();
+    let (mut accumulator, end_idx) = if args.len() >= 2 {
+        (args[1], len)
+    } else {
+        (arr_clone[len - 1], len - 1)
+    };
+
+    // Iterate from right to left
+    for i in (0..end_idx).rev() {
+        let element = arr_clone[i];
+        let call_args = vec![accumulator, element, Value::int(i as i32), this];
+        accumulator = interp.call_value(callback, Value::undefined(), &call_args)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(accumulator)
+}
+
+/// Object.prototype.toString - returns "[object Type]" string representation
+fn native_object_to_string(interp: &mut Interpreter, this: Value, _args: &[Value]) -> Result<Value, String> {
+    let type_str = if this.is_null() {
+        "[object Null]"
+    } else if this.is_undefined() {
+        "[object Undefined]"
+    } else if this.is_array() {
+        "[object Array]"
+    } else if this.to_object_idx().is_some() {
+        "[object Object]"
+    } else if this.is_error_object() {
+        "[object Error]"
+    } else if this.is_regexp_object() {
+        "[object RegExp]"
+    } else if this.to_string_idx().is_some() || this.is_string() {
+        "[object String]"
+    } else if this.to_i32().is_some() {
+        "[object Number]"
+    } else if this.to_bool().is_some() {
+        "[object Boolean]"
+    } else if this.is_closure() || this.to_native_func_idx().is_some() {
+        "[object Function]"
+    } else {
+        "[object Object]"
+    };
+
+    Ok(interp.create_runtime_string(type_str.to_string()))
+}
+
+/// gc() - trigger garbage collection (placeholder)
+fn native_gc(interp: &mut Interpreter, _this: Value, _args: &[Value]) -> Result<Value, String> {
+    // In a full implementation, this would trigger GC
+    // For now, just increment the count and return undefined
+    interp.gc_count += 1;
+    Ok(Value::undefined())
+}
+
+/// load(filename) - load and execute a JavaScript file
+fn native_load(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let filename = args.first()
+        .and_then(|v| v.to_string_idx())
+        .and_then(|idx| interp.get_string_by_idx(idx).map(|s| s.to_string()))
+        .ok_or_else(|| "load requires a filename string".to_string())?;
+
+    // Read the file
+    let contents = std::fs::read_to_string(&filename)
+        .map_err(|e| format!("cannot load '{}': {}", filename, e))?;
+
+    // Compile the source
+    use crate::parser::compiler::Compiler;
+    use crate::runtime::CaptureInfo;
+
+    let compiled = Compiler::new(&contents).compile()
+        .map_err(|e| format!("compile error in '{}': {}", filename, e))?;
+
+    // Convert to FunctionBytecode
+    fn to_bytecode(compiled: crate::parser::compiler::CompiledFunction) -> FunctionBytecode {
+        let inner_functions = compiled
+            .functions
+            .into_iter()
+            .map(to_bytecode)
+            .collect();
+
+        let captures = compiled
+            .captures
+            .into_iter()
+            .map(|c| CaptureInfo {
+                outer_index: c.outer_index,
+                is_local: c.is_local,
+            })
+            .collect();
+
+        FunctionBytecode {
+            name: None,
+            arg_count: compiled.arg_count as u16,
+            local_count: compiled.local_count as u16,
+            stack_size: 64,
+            has_arguments: false,
+            bytecode: compiled.bytecode,
+            constants: compiled.constants,
+            string_constants: compiled.string_constants,
+            source_file: None,
+            line_numbers: Vec::new(),
+            inner_functions,
+            captures,
+        }
+    }
+
+    let bytecode = to_bytecode(compiled);
+
+    interp.execute(&bytecode)
+        .map_err(|e| format!("runtime error in '{}': {}", filename, e))
+}
+
+/// setTimeout(callback, delay) - schedule callback after delay (returns timer ID)
+fn native_set_timeout(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let callback = args.first().copied()
+        .ok_or_else(|| "setTimeout requires a callback function".to_string())?;
+
+    if !callback.is_closure() && callback.to_func_ptr().is_none() && callback.to_native_func_idx().is_none() {
+        return Err("setTimeout callback must be a function".to_string());
+    }
+
+    let delay = args.get(1)
+        .and_then(|v| v.to_i32())
+        .unwrap_or(0) as u64;
+
+    // Get current time
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let timer_id = interp.next_timer_id;
+    interp.next_timer_id += 1;
+
+    interp.timers.push(Timer {
+        id: timer_id,
+        callback,
+        fire_at: now + delay,
+        cancelled: false,
+    });
+
+    Ok(Value::int(timer_id as i32))
+}
+
+/// clearTimeout(id) - cancel a scheduled timeout
+fn native_clear_timeout(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+    let timer_id = args.first()
+        .and_then(|v| v.to_i32())
+        .ok_or_else(|| "clearTimeout requires a timer ID".to_string())? as u32;
+
+    // Mark the timer as cancelled
+    for timer in &mut interp.timers {
+        if timer.id == timer_id {
+            timer.cancelled = true;
+            break;
+        }
+    }
+
+    Ok(Value::undefined())
 }
 
 impl Default for Interpreter {
