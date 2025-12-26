@@ -1769,12 +1769,73 @@ impl Interpreter {
                 // Return
                 op if op == OpCode::Return as u8 => {
                     let result = self.stack.pop().ok_or(InterpreterError::StackUnderflow)?;
-                    return self.do_return(result);
+
+                    // Pop the current frame
+                    let frame = self.call_stack.pop().ok_or_else(|| {
+                        InterpreterError::InternalError("no call frame to return from".to_string())
+                    })?;
+
+                    // Clean up locals from the stack
+                    let local_count = unsafe { (*frame.bytecode).local_count } as usize;
+                    self.stack.drop_n(local_count);
+
+                    // For constructor calls: if result is not an object, return 'this' instead
+                    let final_result = if frame.is_constructor && !result.is_object() {
+                        frame.this_val
+                    } else {
+                        result
+                    };
+
+                    // If there are no more frames, this is the final result
+                    if self.call_stack.is_empty() {
+                        return Ok(final_result);
+                    }
+
+                    // Check if we've reached the target depth for a nested call_value
+                    if let Some(target_depth) = self.nested_call_target_depth
+                        && self.call_stack.len() == target_depth
+                    {
+                        return Ok(final_result);
+                    }
+
+                    // Otherwise, push the result for the caller and continue the loop (no recursion!)
+                    self.stack.push(final_result);
                 }
 
                 // Return undefined
                 op if op == OpCode::ReturnUndef as u8 => {
-                    return self.do_return(Value::undefined());
+                    let result = Value::undefined();
+
+                    // Pop the current frame
+                    let frame = self.call_stack.pop().ok_or_else(|| {
+                        InterpreterError::InternalError("no call frame to return from".to_string())
+                    })?;
+
+                    // Clean up locals from the stack
+                    let local_count = unsafe { (*frame.bytecode).local_count } as usize;
+                    self.stack.drop_n(local_count);
+
+                    // For constructor calls: if result is not an object, return 'this' instead
+                    let final_result = if frame.is_constructor && !result.is_object() {
+                        frame.this_val
+                    } else {
+                        result
+                    };
+
+                    // If there are no more frames, this is the final result
+                    if self.call_stack.is_empty() {
+                        return Ok(final_result);
+                    }
+
+                    // Check if we've reached the target depth for a nested call_value
+                    if let Some(target_depth) = self.nested_call_target_depth
+                        && self.call_stack.len() == target_depth
+                    {
+                        return Ok(final_result);
+                    }
+
+                    // Otherwise, push the result for the caller and continue the loop (no recursion!)
+                    self.stack.push(final_result);
                 }
 
                 // Function closure creation (16-bit function index)
@@ -3188,47 +3249,6 @@ impl Interpreter {
         }
     }
 
-    /// Handle return from a function
-    ///
-    /// If this is a nested call, pops the frame and continues execution.
-    /// If this is the top-level call, returns the result.
-    fn do_return(&mut self, result: Value) -> InterpreterResult<Value> {
-        // Pop the current frame
-        let frame = self.call_stack.pop().ok_or_else(|| {
-            InterpreterError::InternalError("no call frame to return from".to_string())
-        })?;
-
-        // Clean up locals from the stack
-        let local_count = unsafe { (*frame.bytecode).local_count } as usize;
-        self.stack.drop_n(local_count);
-
-        // For constructor calls: if result is not an object, return 'this' instead
-        let final_result = if frame.is_constructor && !result.is_object() {
-            frame.this_val
-        } else {
-            result
-        };
-
-        // If there are no more frames, this is the final result
-        if self.call_stack.is_empty() {
-            return Ok(final_result);
-        }
-
-        // Check if we've reached the target depth for a nested call_value
-        if let Some(target_depth) = self.nested_call_target_depth
-            && self.call_stack.len() == target_depth
-        {
-            // Don't push result or continue - just return to call_value
-            return Ok(final_result);
-        }
-
-        // Otherwise, push the result for the caller and continue
-        self.stack.push(final_result);
-
-        // Continue running the caller
-        self.run()
-    }
-
     // Helper: Convert value to boolean (static method to avoid borrow issues)
     fn value_to_bool(val: Value) -> bool {
         if val.is_bool() {
@@ -3301,7 +3321,13 @@ impl Interpreter {
         match (a.to_i32(), b.to_i32()) {
             (Some(va), Some(vb)) => {
                 if let Some(result) = va.checked_add(vb) {
-                    Ok(Value::int(result))
+                    if crate::value::fits_in_short_int(result) {
+                        Ok(Value::int(result))
+                    } else {
+                        Err(InterpreterError::InternalError(
+                            "integer overflow".to_string(),
+                        ))
+                    }
                 } else {
                     Err(InterpreterError::InternalError(
                         "integer overflow".to_string(),
@@ -3318,7 +3344,13 @@ impl Interpreter {
         match (a.to_i32(), b.to_i32()) {
             (Some(va), Some(vb)) => {
                 if let Some(result) = va.checked_sub(vb) {
-                    Ok(Value::int(result))
+                    if crate::value::fits_in_short_int(result) {
+                        Ok(Value::int(result))
+                    } else {
+                        Err(InterpreterError::InternalError(
+                            "integer overflow".to_string(),
+                        ))
+                    }
                 } else {
                     Err(InterpreterError::InternalError(
                         "integer overflow".to_string(),
@@ -3335,7 +3367,13 @@ impl Interpreter {
         match (a.to_i32(), b.to_i32()) {
             (Some(va), Some(vb)) => {
                 if let Some(result) = va.checked_mul(vb) {
-                    Ok(Value::int(result))
+                    if crate::value::fits_in_short_int(result) {
+                        Ok(Value::int(result))
+                    } else {
+                        Err(InterpreterError::InternalError(
+                            "integer overflow".to_string(),
+                        ))
+                    }
                 } else {
                     Err(InterpreterError::InternalError(
                         "integer overflow".to_string(),
