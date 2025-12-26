@@ -220,6 +220,10 @@ MQuickJS (and this Rust port) is a **minimalist subset** of QuickJS:
 | Proxies | Yes | No |
 | Size | ~200KB | ~10KB RAM capable |
 
+## Documentation
+
+- **[How It Works](docs/HOW_IT_WORKS.md)** - Deep dive into JavaScript engine internals for learners: lexer, parser, bytecode, VM, garbage collection, closures, and more
+
 ## License
 
 MIT License
