@@ -26,10 +26,7 @@ pub fn is_whitespace(c: u32) -> bool {
 /// Check if a code point is a Unicode space character
 #[inline]
 pub fn is_unicode_space(c: u32) -> bool {
-    matches!(
-        c,
-        0x1680 | 0x2000..=0x200A | 0x202F | 0x205F | 0x3000
-    )
+    matches!(c, 0x1680 | 0x2000..=0x200A | 0x202F | 0x205F | 0x3000)
 }
 
 /// Check if a code point can start an identifier

@@ -140,8 +140,7 @@ impl Property {
     /// Set the property type
     #[inline]
     pub fn set_prop_type(&mut self, prop_type: PropertyType) {
-        self.hash_next_and_type =
-            (self.hash_next_and_type & !0x3) | (prop_type as u32);
+        self.hash_next_and_type = (self.hash_next_and_type & !0x3) | (prop_type as u32);
     }
 
     /// Get hash chain next index
@@ -229,7 +228,9 @@ impl JSObject {
     fn make_header(class_id: ClassId, extra_size: usize) -> usize {
         let tag = MemoryTag::Object as usize;
         // gc_mark (1) | mtag (3) | class_id (8) | extra_size (remaining)
-        (tag << 1) | ((class_id as usize) << Self::HEADER_BITS) | (extra_size << (Self::HEADER_BITS + 8))
+        (tag << 1)
+            | ((class_id as usize) << Self::HEADER_BITS)
+            | (extra_size << (Self::HEADER_BITS + 8))
     }
 
     /// Get class ID

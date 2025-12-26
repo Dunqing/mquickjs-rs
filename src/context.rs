@@ -125,7 +125,9 @@ impl Context {
     }
 
     /// Convert CompiledFunction to FunctionBytecode (recursive for inner functions)
-    fn compiled_to_bytecode(compiled: crate::parser::compiler::CompiledFunction) -> FunctionBytecode {
+    fn compiled_to_bytecode(
+        compiled: crate::parser::compiler::CompiledFunction,
+    ) -> FunctionBytecode {
         use crate::runtime::CaptureInfo;
 
         let inner_functions = compiled
@@ -299,10 +301,14 @@ mod tests {
     fn test_eval_if_else() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("var x = 5; if (x < 10) { return 1; } else { return 2; }").unwrap();
+        let result = ctx
+            .eval("var x = 5; if (x < 10) { return 1; } else { return 2; }")
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
 
-        let result = ctx.eval("var x = 15; if (x < 10) { return 1; } else { return 2; }").unwrap();
+        let result = ctx
+            .eval("var x = 15; if (x < 10) { return 1; } else { return 2; }")
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2));
     }
 
@@ -311,7 +317,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Sum 1 to 5
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var sum = 0;
             var i = 1;
             while (i < 6) {
@@ -319,7 +327,9 @@ mod tests {
                 i = i + 1;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
 
         assert_eq!(result.to_i32(), Some(15));
     }
@@ -359,13 +369,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Simple for loop test - just count iterations
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var count = 0;
             for (var i = 0; i < 3; i = i + 1) {
                 count = count + 1;
             }
             return count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
 
         assert_eq!(result.to_i32(), Some(3));
     }
@@ -375,13 +389,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Sum 1 to 5 using for loop
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var sum = 0;
             for (var i = 1; i < 6; i = i + 1) {
                 sum = sum + i;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
 
         assert_eq!(result.to_i32(), Some(15));
     }
@@ -444,12 +462,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Simple function that returns a constant
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function five() {
                 return 5;
             }
             return five();
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -458,12 +480,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Function with arguments
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function add(a, b) {
                 return a + b;
             }
             return add(10, 20);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(30));
     }
 
@@ -472,13 +498,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Function with local variable
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function double(x) {
                 var result = x * 2;
                 return result;
             }
             return double(7);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(14));
     }
 
@@ -487,7 +517,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Recursive factorial
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function factorial(n) {
                 if (n < 2) {
                     return 1;
@@ -495,7 +527,9 @@ mod tests {
                 return n * factorial(n - 1);
             }
             return factorial(5);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(120)); // 5! = 120
     }
 
@@ -504,7 +538,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Multiple independent functions (cross-function calls require closures - Stage 7)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function triple(x) {
                 return x * 3;
             }
@@ -514,7 +550,9 @@ mod tests {
             var a = triple(5);
             var b = negate(7);
             return a + b;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(8)); // 15 + (-7) = 8
     }
 
@@ -523,12 +561,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Test that we can call the same function multiple times
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function add(a, b) {
                 return a + b;
             }
             return add(add(1, 2), add(3, 4));
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10)); // (1+2) + (3+4) = 10
     }
 
@@ -537,7 +579,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Break out of while loop
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var i = 0;
             while (i < 100) {
                 if (i === 5) {
@@ -546,7 +590,9 @@ mod tests {
                 i = i + 1;
             }
             return i;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -555,7 +601,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Break out of for loop
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var sum = 0;
             for (var i = 0; i < 100; i = i + 1) {
                 if (i === 5) {
@@ -564,7 +612,9 @@ mod tests {
                 sum = sum + i;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10)); // 0 + 1 + 2 + 3 + 4 = 10
     }
 
@@ -573,7 +623,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Skip even numbers
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var sum = 0;
             var i = 0;
             while (i < 10) {
@@ -584,7 +636,9 @@ mod tests {
                 sum = sum + i;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(25)); // 1 + 3 + 5 + 7 + 9 = 25
     }
 
@@ -593,7 +647,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Skip multiples of 3
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var sum = 0;
             for (var i = 1; i < 10; i = i + 1) {
                 if (i % 3 === 0) {
@@ -602,13 +658,15 @@ mod tests {
                 sum = sum + i;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(27)); // 1+2+4+5+7+8 = 27
     }
 
     #[test]
     fn test_typeof_operator() {
-        use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION};
+        use crate::value::{STR_BOOLEAN, STR_FUNCTION, STR_NUMBER, STR_OBJECT, STR_UNDEFINED};
 
         let mut ctx = Context::new(64 * 1024);
 
@@ -779,7 +837,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Simple closure that captures a variable
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function outer() {
                 var x = 42;
                 function inner() {
@@ -788,7 +848,9 @@ mod tests {
                 return inner();
             }
             return outer();
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -797,7 +859,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Closure captures the value at definition time (value capture semantics)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function makeAdder(x) {
                 function adder(y) {
                     return x + y;
@@ -806,7 +870,9 @@ mod tests {
             }
             var add5 = makeAdder(5);
             return add5(10);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(15));
     }
 
@@ -815,7 +881,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Closure that captures multiple variables
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function outer() {
                 var a = 10;
                 var b = 20;
@@ -825,7 +893,9 @@ mod tests {
                 return inner();
             }
             return outer();
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(30));
     }
 
@@ -834,7 +904,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Closure captures parameter
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function multiplier(factor) {
                 function mult(x) {
                     return x * factor;
@@ -843,7 +915,9 @@ mod tests {
             }
             var double = multiplier(2);
             return double(7);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(14));
     }
 
@@ -854,7 +928,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // typeof closure should be "function"
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function outer() {
                 var x = 1;
                 function inner() {
@@ -863,7 +939,9 @@ mod tests {
                 return inner;
             }
             return typeof outer();
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
         assert_eq!(result.to_string_idx(), Some(STR_FUNCTION));
     }
@@ -873,7 +951,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Basic try-catch that catches an exception
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var result = 0;
             try {
                 throw 42;
@@ -881,7 +961,9 @@ mod tests {
                 result = e;
             }
             return result;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -890,7 +972,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Try block completes normally, catch is skipped
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var result = 0;
             try {
                 result = 10;
@@ -898,7 +982,9 @@ mod tests {
                 result = 99;
             }
             return result;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10));
     }
 
@@ -907,7 +993,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Finally always executes
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var result = 0;
             try {
                 result = 1;
@@ -917,7 +1005,9 @@ mod tests {
                 result = result + 10;
             }
             return result;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(11)); // 1 + 10
     }
 
@@ -926,7 +1016,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Exception caught, then finally executes
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var result = 0;
             try {
                 throw 5;
@@ -936,7 +1028,9 @@ mod tests {
                 result = result + 100;
             }
             return result;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(105)); // 5 + 100
     }
 
@@ -945,7 +1039,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Throw and catch a value
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function mayThrow(x) {
                 if (x < 0) {
                     throw x;
@@ -960,7 +1056,9 @@ mod tests {
                 result = e + 100;
             }
             return result;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(95)); // -5 + 100
     }
 
@@ -969,7 +1067,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Nested try-catch
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var result = 0;
             try {
                 try {
@@ -982,7 +1082,9 @@ mod tests {
                 result = outer + 100;
             }
             return result;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(111)); // (1 + 10) + 100
     }
 
@@ -991,10 +1093,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Empty array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [];
             return 1;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1003,10 +1109,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check typeof array - should be "object" in JavaScript
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             return 42;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -1015,10 +1125,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Array with elements
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             return arr[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(20));
     }
 
@@ -1027,10 +1141,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Access elements at different indices
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             return arr[0] + arr[2] + arr[4];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(9)); // 1 + 3 + 5
     }
 
@@ -1039,11 +1157,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Assign to array element
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             arr[1] = 100;
             return arr[0] + arr[1] + arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(104)); // 1 + 100 + 3
     }
 
@@ -1052,11 +1174,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Assign to index beyond current length
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2];
             arr[5] = 100;
             return arr[5];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(100));
     }
 
@@ -1065,14 +1191,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Access index beyond current length returns undefined
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             var x = arr[10];
             if (x) {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0)); // undefined is falsy
     }
 
@@ -1081,10 +1211,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Use array elements in expressions
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [2, 3, 4];
             return arr[0] * arr[1] * arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(24)); // 2 * 3 * 4
     }
 
@@ -1093,11 +1227,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Nested arrays (array of arrays)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [[1, 2], [3, 4]];
             var inner = arr[1];
             return inner[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -1106,10 +1244,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Trailing comma is allowed
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3,];
             return arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -1118,11 +1260,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Use computed index
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30, 40];
             var i = 1 + 1;
             return arr[i];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(30)); // arr[2]
     }
 
@@ -1135,7 +1281,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Simple constructor that sets properties on this
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Point(x, y) {
                 this.x = x;
                 this.y = y;
@@ -1143,7 +1291,9 @@ mod tests {
             }
             var p = new Point(3, 4);
             return p.x + p.y;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(7)); // 3 + 4
     }
 
@@ -1152,14 +1302,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Constructor with no arguments
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Counter() {
                 this.count = 0;
                 return this;
             }
             var c = new Counter();
             return c.count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -1168,14 +1322,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Get property from constructed object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Box(val) {
                 this.value = val;
                 return this;
             }
             var b = new Box(42);
             return b.value;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -1184,7 +1342,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Set property on object after construction
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() {
                 this.a = 1;
                 return this;
@@ -1192,7 +1352,9 @@ mod tests {
             var o = new Obj();
             o.a = 100;
             return o.a;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(100));
     }
 
@@ -1201,7 +1363,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object with multiple properties
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Person(name, age) {
                 this.name = name;
                 this.age = age;
@@ -1209,7 +1373,9 @@ mod tests {
             }
             var p = new Person(0, 25);
             return p.age;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(25));
     }
 
@@ -1218,18 +1384,24 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // First, verify the object is created and is_object() works
-        let obj_result = ctx.eval("
+        let obj_result = ctx
+            .eval(
+                "
             function Foo() {
                 return this;
             }
             var f = new Foo();
             return f;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(obj_result.is_object(), "Result should be an object");
 
         // Now test typeof
         let mut ctx2 = Context::new(64 * 1024);
-        let result = ctx2.eval("
+        let result = ctx2
+            .eval(
+                "
             function Foo() {
                 return this;
             }
@@ -1238,7 +1410,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1251,13 +1425,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check if index exists in array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             if (1 in arr) {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1266,13 +1444,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check if out-of-bounds index returns false
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             if (5 in arr) {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -1281,7 +1463,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check if property exists in object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() {
                 this.x = 1;
                 this.y = 2;
@@ -1292,7 +1476,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1301,7 +1487,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check that missing property returns false
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() {
                 this.x = 1;
                 return this;
@@ -1311,7 +1499,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -1320,14 +1510,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Delete array element sets it to undefined
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             delete arr[1];
             if (arr[1]) {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0)); // arr[1] is now undefined (falsy)
     }
 
@@ -1336,7 +1530,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Delete object property
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() {
                 this.x = 1;
                 this.y = 2;
@@ -1348,7 +1544,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0)); // x is deleted
     }
 
@@ -1357,13 +1555,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Delete returns true on success
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             if (delete arr[1]) {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1372,7 +1574,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object created with new is instanceof its constructor
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Foo() {
                 return this;
             }
@@ -1381,7 +1585,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1390,7 +1596,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object is not instanceof a different constructor
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Foo() { return this; }
             function Bar() { return this; }
             var f = new Foo();
@@ -1398,7 +1606,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -1407,14 +1617,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Non-object is not instanceof anything
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Foo() { return this; }
             var x = 42;
             if (x instanceof Foo) {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -1423,7 +1637,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Multiple instances of the same constructor
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Foo() { return this; }
             var f1 = new Foo();
             var f2 = new Foo();
@@ -1434,7 +1650,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2));
     }
 
@@ -1443,7 +1661,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // instanceof works even with properties set on object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Person(name) {
                 this.name = name;
                 return this;
@@ -1453,7 +1673,9 @@ mod tests {
                 return 1;
             }
             return 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -1462,14 +1684,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Iterate over array indices
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             var sum = 0;
             for (var k in arr) {
                 sum = sum + 1;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3)); // 3 indices
     }
 
@@ -1478,7 +1704,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Iterate over object keys
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() {
                 this.a = 1;
                 this.b = 2;
@@ -1491,7 +1719,9 @@ mod tests {
                 count = count + 1;
             }
             return count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3)); // 3 properties
     }
 
@@ -1500,7 +1730,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Iterate over empty object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Empty() {
                 return this;
             }
@@ -1510,7 +1742,9 @@ mod tests {
                 count = count + 1;
             }
             return count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0)); // no properties
     }
 
@@ -1519,14 +1753,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Iterate over empty array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [];
             var count = 0;
             for (var k in arr) {
                 count = count + 1;
             }
             return count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0)); // no elements
     }
 
@@ -1535,7 +1773,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Break in for-in loop
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30, 40, 50];
             var count = 0;
             for (var k in arr) {
@@ -1545,7 +1785,9 @@ mod tests {
                 }
             }
             return count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3)); // stopped after 3
     }
 
@@ -1554,14 +1796,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Sum values in array using for-of
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             var sum = 0;
             for (var val of arr) {
                 sum = sum + val;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(60)); // 10+20+30
     }
 
@@ -1570,19 +1816,25 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Simplest for-of test with array (already works)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [5, 7];
             var sum = 0;
             for (var val of arr) {
                 sum = sum + val;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(12)); // 5+7 - this should work
 
         // Now test with object
         let mut ctx2 = Context::new(64 * 1024);
-        let result = ctx2.eval("
+        let result = ctx2
+            .eval(
+                "
             function Point(x, y) {
                 this.x = x;
                 this.y = y;
@@ -1593,7 +1845,9 @@ mod tests {
                 sum = sum + val;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(12)); // 5+7
     }
 
@@ -1602,14 +1856,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // for-of on empty array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [];
             var count = 0;
             for (var val of arr) {
                 count = count + 1;
             }
             return count;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0)); // no iterations
     }
 
@@ -1618,7 +1876,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Break in for-of loop
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             var sum = 0;
             for (var val of arr) {
@@ -1628,7 +1888,9 @@ mod tests {
                 }
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6)); // 1+2+3=6, then break
     }
 
@@ -1637,7 +1899,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Continue in for-of loop (skip even values)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             var sum = 0;
             for (var val of arr) {
@@ -1647,7 +1911,9 @@ mod tests {
                 sum = sum + val;
             }
             return sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(9)); // 1+3+5=9
     }
 
@@ -1686,11 +1952,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Use native function in expression
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var x = parseInt(10);
             var y = parseInt(20);
             return x + y;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(30));
     }
 
@@ -1699,10 +1969,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Store native function in variable and call it
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var f = parseInt;
             return f(42);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -1804,11 +2078,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Use Math in complex expression
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var x = Math.abs(-5);
             var y = Math.max(x, 10);
             return y;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10));
     }
 
@@ -1894,11 +2172,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.push(x) returns new length
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2];
             var len = arr.push(3);
             return len;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -1907,11 +2189,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Push and then access the pushed element
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2];
             arr.push(42);
             return arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -1920,11 +2206,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.pop() returns the removed element
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             var val = arr.pop();
             return val;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -1933,10 +2223,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.length returns the array length
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             return arr.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -1945,12 +2239,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Length updates after push
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2];
             arr.push(3);
             arr.push(4);
             return arr.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(4));
     }
 
@@ -1959,13 +2257,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Multiple operations
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             arr.push(40);
             arr.pop();
             arr.pop();
             return arr.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2));
     }
 
@@ -1974,19 +2276,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.shift() removes and returns the first element
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             var first = arr.shift();
             return first;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
 
         // Verify array is modified
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30];
             arr.shift();
             return arr[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(20));
     }
 
@@ -1995,19 +2305,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.unshift(val) adds to front and returns new length
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [2, 3];
             var len = arr.unshift(1);
             return len;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
 
         // Verify element is at front
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [2, 3];
             arr.unshift(1);
             return arr[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2016,17 +2334,25 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.indexOf(val) returns index or -1
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30, 20];
             return arr.indexOf(20);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
 
         // Not found returns -1
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             return arr.indexOf(99);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(-1));
     }
 
@@ -2035,11 +2361,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.join() joins with comma by default
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             var s = arr.join();
             return s;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2048,19 +2378,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.reverse() reverses in place
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             arr.reverse();
             return arr[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
 
         // Verify last element
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             arr.reverse();
             return arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2069,19 +2407,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.slice(start, end) returns new array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             var sliced = arr.slice(1, 4);
             return sliced.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
 
         // Verify slice content
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [10, 20, 30, 40, 50];
             var sliced = arr.slice(1, 3);
             return sliced[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(20));
     }
 
@@ -2090,11 +2436,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // arr.slice(-2) returns last 2 elements
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             var sliced = arr.slice(-2);
             return sliced[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(4));
     }
 
@@ -2107,10 +2457,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String length property (using runtime string)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo\";
             return s.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -2119,11 +2473,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // charAt returns character at index
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo\";
             var c = s.charAt(1);
             return c;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2132,11 +2490,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // indexOf returns position of substring (using runtime string for search)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo world\";
             var search = \"wor\" + \"ld\";
             return s.indexOf(search);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         // "hello world" -> "world" starts at index 6
         assert_eq!(result.to_i32(), Some(6));
     }
@@ -2146,11 +2508,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // indexOf returns -1 when not found (using runtime string for search)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo\";
             var search = \"x\" + \"yz\";
             return s.indexOf(search);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(-1));
     }
 
@@ -2159,11 +2525,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // slice extracts portion of string
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo world\";
             var sub = s.slice(0, 5);
             return sub.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -2172,11 +2542,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // slice with negative index
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo\";
             var sub = s.slice(-2);
             return sub.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2));
     }
 
@@ -2185,11 +2559,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // toUpperCase converts to uppercase
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hel\" + \"lo\";
             var upper = s.toUpperCase();
             return upper;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2198,11 +2576,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // toLowerCase converts to lowercase
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"HEL\" + \"LO\";
             var lower = s.toLowerCase();
             return lower;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2211,11 +2593,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // trim removes whitespace
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"  hel\" + \"lo  \";
             var trimmed = s.trim();
             return trimmed.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -2224,12 +2610,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // split returns array of strings (using runtime separator)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"a\" + \",b,c\";
             var sep = \"\" + \",\";
             var arr = s.split(sep);
             return arr.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -2238,12 +2628,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Access split array element (using runtime separator)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"one\" + \"-two-three\";
             var sep = \"\" + \"-\";
             var arr = s.split(sep);
             return arr[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2252,12 +2646,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.concat with multiple args
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \"\";
             var w = \"\" + \" world\";
             var e = \"\" + \"!\";
             return s.concat(w, e);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2266,10 +2664,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.repeat
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"ab\" + \"\";
             return s.repeat(3);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2278,19 +2680,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.startsWith - true case
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \" world\";
             var prefix = \"hel\" + \"lo\";
             return s.startsWith(prefix);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
 
         // String.prototype.startsWith - false case
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \" world\";
             var prefix = \"wor\" + \"ld\";
             return s.startsWith(prefix);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -2299,19 +2709,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.endsWith - true case
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \" world\";
             var suffix = \"wor\" + \"ld\";
             return s.endsWith(suffix);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
 
         // String.prototype.endsWith - false case
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \" world\";
             var suffix = \"hel\" + \"lo\";
             return s.endsWith(suffix);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -2320,10 +2738,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.padStart with spaces (default)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"5\" + \"\";
             return s.padStart(3).length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -2332,10 +2754,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.padEnd with spaces (default)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"5\" + \"\";
             return s.padEnd(3).length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -2344,12 +2770,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.replace - replace first occurrence
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"foo\" + \" bar foo\";
             var search = \"f\" + \"oo\";
             var rep = \"b\" + \"az\";
             return s.replace(search, rep);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2358,19 +2788,27 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.prototype.includes - true case
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \" world\";
             var search = \"lo w\" + \"\";
             return s.includes(search);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
 
         // String.prototype.includes - false case
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello\" + \" world\";
             var search = \"xyz\" + \"\";
             return s.includes(search);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -2435,10 +2873,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // console.log should execute and return undefined
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             console.log(42);
             return 1;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2447,10 +2889,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // console.log with multiple args
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             console.log(1, 2, 3);
             return 1;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2459,10 +2905,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // console.error should execute and return undefined
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             console.error(42);
             return 1;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2471,11 +2921,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // console.log with array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             console.log(arr);
             return 1;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2488,10 +2942,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // new Error("message") creates an error object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new Error('something went wrong');
             return typeof e;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2500,10 +2958,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Error.name should be "Error"
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new Error('test');
             return e.name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         // Check it's a string (the name property)
         assert!(result.is_string());
     }
@@ -2513,10 +2975,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Error.message should be the message passed to constructor
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new Error('test message');
             return e.message;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2525,10 +2991,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // new TypeError("message")
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new TypeError('type error');
             return e.name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2537,10 +3007,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // new ReferenceError("message")
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new ReferenceError('ref error');
             return e.name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2549,7 +3023,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // throw new Error() should be catchable
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var caught = 0;
             try {
                 throw new Error('test');
@@ -2557,7 +3033,9 @@ mod tests {
                 caught = 1;
             }
             return caught;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2566,7 +3044,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Catch error and access its message
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var msg = '';
             try {
                 throw new Error('caught message');
@@ -2574,7 +3054,9 @@ mod tests {
                 msg = e.message;
             }
             return msg;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2583,7 +3065,9 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Catch error and access its name
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var name = '';
             try {
                 throw new TypeError('type error');
@@ -2591,7 +3075,9 @@ mod tests {
                 name = e.name;
             }
             return name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2603,9 +3089,13 @@ mod tests {
     fn test_json_stringify_number() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return JSON.stringify(42);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2613,9 +3103,13 @@ mod tests {
     fn test_json_stringify_boolean() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return JSON.stringify(true);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2623,9 +3117,13 @@ mod tests {
     fn test_json_stringify_null() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return JSON.stringify(null);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2633,10 +3131,14 @@ mod tests {
     fn test_json_stringify_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             return JSON.stringify(arr);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2645,11 +3147,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Create object using constructor and set properties
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.a = 1; this.b = 2; }
             var obj = new Obj();
             return JSON.stringify(obj);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2657,10 +3163,14 @@ mod tests {
     fn test_json_parse_number() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = '42';
             return JSON.parse(s);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -2668,10 +3178,14 @@ mod tests {
     fn test_json_parse_boolean() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = 'true';
             return JSON.parse(s);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -2679,10 +3193,14 @@ mod tests {
     fn test_json_parse_null() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = 'null';
             return JSON.parse(s);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_null());
     }
 
@@ -2690,11 +3208,15 @@ mod tests {
     fn test_json_parse_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = '[1, 2, 3]';
             var arr = JSON.parse(s);
             return arr[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2));
     }
 
@@ -2702,11 +3224,15 @@ mod tests {
     fn test_json_parse_object() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = '{\"x\": 10, \"y\": 20}';
             var obj = JSON.parse(s);
             return obj.x;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10));
     }
 
@@ -2714,11 +3240,15 @@ mod tests {
     fn test_json_parse_nested() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = '{\"arr\": [1, 2, 3], \"obj\": {\"a\": 1}}';
             var data = JSON.parse(s);
             return data.arr[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2731,9 +3261,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Date.now() returns a number
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Date.now();
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.to_i32().is_some());
     }
 
@@ -2743,11 +3277,15 @@ mod tests {
 
         // Two calls to Date.now() should return different or equal values
         // (time progresses or stays same within execution)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var t1 = Date.now();
             var t2 = Date.now();
             return t2 >= t1 ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2756,9 +3294,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Date.now() should return a positive value
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Date.now() > 0 ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2771,11 +3313,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Create a RegExp and check it exists
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"hello\" + \"\";
             var re = new RegExp(pattern);
             return typeof re;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         // Note: typeof returns "object" for RegExp in our implementation
         assert!(result.is_string());
     }
@@ -2785,12 +3331,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Test matching pattern
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"hel\" + \"lo\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             return re.test(str);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -2799,12 +3349,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Test non-matching pattern
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"xyz\" + \"\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             return re.test(str);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -2813,12 +3367,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Case-sensitive by default
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"HELLO\" + \"\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             return re.test(str);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -2827,13 +3385,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Case-insensitive with 'i' flag
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"HELLO\" + \"\";
             var flags = \"\" + \"i\";
             var re = new RegExp(pattern, flags);
             var str = \"hello\" + \" world\";
             return re.test(str);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -2842,13 +3404,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // exec returns array on match
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"wor\" + \"ld\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             var match = re.exec(str);
             return match[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2857,13 +3423,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // exec returns null on no match
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"xyz\" + \"\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             var match = re.exec(str);
             return match === null ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2872,12 +3442,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Test with digit pattern
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"[0-9]\" + \"+\";
             var re = new RegExp(pattern);
             var str = \"abc\" + \"123def\";
             return re.test(str);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -2886,13 +3460,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.match with RegExp
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"wor\" + \"ld\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             var match = str.match(re);
             return match[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -2901,13 +3479,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.match returns null when no match
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"xyz\" + \"\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             var match = str.match(re);
             return match === null ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -2916,14 +3498,18 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.match with global flag returns all matches
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"o\" + \"\";
             var flags = \"\" + \"g\";
             var re = new RegExp(pattern, flags);
             var str = \"hello\" + \" world\";
             var matches = str.match(re);
             return matches.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2)); // "hello world" has 2 'o's
     }
 
@@ -2932,12 +3518,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.search returns index of match
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"wor\" + \"ld\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             return str.search(re);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6)); // "world" starts at index 6
     }
 
@@ -2946,12 +3536,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // String.search returns -1 when not found
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var pattern = \"xyz\" + \"\";
             var re = new RegExp(pattern);
             var str = \"hello\" + \" world\";
             return str.search(re);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(-1));
     }
 
@@ -2961,17 +3555,25 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Get code point of 'A' (65)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"ABC\" + \"\";
             return s.codePointAt(0);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(65));
 
         // Get code point of 'B' (66)
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"ABC\" + \"\";
             return s.codePointAt(1);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(66));
     }
 
@@ -2979,11 +3581,15 @@ mod tests {
     fn test_string_trim_start() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"  hello\" + \"\";
             var t = s.trimStart();
             return t.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5)); // "hello" has length 5
     }
 
@@ -2991,11 +3597,15 @@ mod tests {
     fn test_string_trim_end() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"hello  \" + \"\";
             var t = s.trimEnd();
             return t.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5)); // "hello" has length 5
     }
 
@@ -3003,13 +3613,17 @@ mod tests {
     fn test_string_replace_all() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = \"aXbXc\" + \"\";
             var x = \"X\" + \"\";
             var y = \"Y\" + \"\";
             var r = s.replaceAll(x, y);
             return r.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5)); // "aYbYc" has length 5
     }
 
@@ -3021,9 +3635,13 @@ mod tests {
     fn test_boolean_true() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Boolean(true);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -3031,9 +3649,13 @@ mod tests {
     fn test_boolean_false() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Boolean(false);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -3041,9 +3663,13 @@ mod tests {
     fn test_boolean_number_truthy() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Boolean(42);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -3051,9 +3677,13 @@ mod tests {
     fn test_boolean_zero_falsy() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Boolean(0);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -3061,9 +3691,13 @@ mod tests {
     fn test_boolean_undefined_falsy() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Boolean(undefined);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -3071,9 +3705,13 @@ mod tests {
     fn test_boolean_null_falsy() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Boolean(null);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -3081,9 +3719,13 @@ mod tests {
     fn test_number_coercion() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Number(true);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3091,9 +3733,13 @@ mod tests {
     fn test_number_coercion_false() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Number(false);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -3101,9 +3747,13 @@ mod tests {
     fn test_string_coercion() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return String(42);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3111,9 +3761,13 @@ mod tests {
     fn test_string_coercion_bool() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return String(true);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3126,12 +3780,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object.keys returns array of property names
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.a = 1; this.b = 2; this.c = 3; }
             var obj = new Obj();
             var keys = Object.keys(obj);
             return keys.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3140,12 +3798,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object.values returns array of property values
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.x = 10; this.y = 20; }
             var obj = new Obj();
             var vals = Object.values(obj);
             return vals[0] + vals[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(30));
     }
 
@@ -3154,12 +3816,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object.entries returns array of [key, value] pairs
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.a = 100; }
             var obj = new Obj();
             var entries = Object.entries(obj);
             return entries.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3167,12 +3833,16 @@ mod tests {
     fn test_has_own_property_true() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.x = 42; }
             var obj = new Obj();
             var prop = \"x\" + \"\";
             return obj.hasOwnProperty(prop);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -3180,12 +3850,16 @@ mod tests {
     fn test_has_own_property_false() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.x = 42; }
             var obj = new Obj();
             var prop = \"y\" + \"\";
             return obj.hasOwnProperty(prop);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(false));
     }
 
@@ -3194,11 +3868,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object.getPrototypeOf on array
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             var proto = Object.getPrototypeOf(arr);
             return proto !== null;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -3207,11 +3885,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object.create creates new object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var obj = Object.create(null);
             obj.x = 42;
             return obj.x;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -3220,9 +3902,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Object.defineProperty exists - test that it's callable
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return typeof Object.defineProperty;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         // Should return "function"
         assert!(result.is_string());
     }
@@ -3329,10 +4015,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Create ArrayBuffer with length 10
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var buf = new ArrayBuffer(10);
             return buf.byteLength;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10));
     }
 
@@ -3341,11 +4031,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Create Uint8Array and subarray
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Uint8Array([1, 2, 3, 4, 5]);
             var sub = arr.subarray(1, 4);
             return sub.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3354,11 +4048,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Verify subarray values
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Uint8Array([10, 20, 30, 40, 50]);
             var sub = arr.subarray(1, 4);
             return sub[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(20));
     }
 
@@ -3376,11 +4074,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // globalThis.globalThis === globalThis
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var g1 = globalThis;
             var g2 = globalThis.globalThis;
             return g1 === g2;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_bool(), Some(true));
     }
 
@@ -3388,10 +4090,14 @@ mod tests {
     fn test_array_is_array_true() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             return Array.isArray(arr) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3399,11 +4105,15 @@ mod tests {
     fn test_array_is_array_false() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function Obj() { this.x = 1; }
             var obj = new Obj();
             return Array.isArray(obj) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -3411,9 +4121,13 @@ mod tests {
     fn test_array_is_array_number() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return Array.isArray(42) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -3425,10 +4139,14 @@ mod tests {
     fn test_int8_array_create() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Int8Array(5);
             return arr.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(5));
     }
 
@@ -3436,13 +4154,17 @@ mod tests {
     fn test_uint8_array_set_get() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Uint8Array(3);
             arr[0] = 10;
             arr[1] = 20;
             arr[2] = 30;
             return arr[0] + arr[1] + arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(60));
     }
 
@@ -3450,12 +4172,16 @@ mod tests {
     fn test_int32_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Int32Array(2);
             arr[0] = 100000;
             arr[1] = 200000;
             return arr[0] + arr[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(300000));
     }
 
@@ -3464,10 +4190,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Int32Array element = 4 bytes, 3 elements = 12 bytes
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Int32Array(3);
             return arr.byteLength;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(12));
     }
 
@@ -3475,11 +4205,15 @@ mod tests {
     fn test_typed_array_from_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var src = [1, 2, 3, 4, 5];
             var arr = new Int8Array(src);
             return arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3488,11 +4222,15 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Int8 range is -128 to 127, 200 should wrap
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Int8Array(1);
             arr[0] = 200;
             return arr[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         // 200 as i8 = -56
         assert_eq!(result.to_i32(), Some(-56));
     }
@@ -3506,12 +4244,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // call() with a simple this value
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function getThis() { return this.value; }
             function Obj() { this.value = 42; }
             var obj = new Obj();
             return getThis.call(obj);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(42));
     }
 
@@ -3520,12 +4262,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // call() with arguments
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function add(a, b) { return this.base + a + b; }
             function Obj() { this.base = 10; }
             var obj = new Obj();
             return add.call(obj, 5, 3);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(18));
     }
 
@@ -3534,10 +4280,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // apply() with an array of arguments
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function sum(a, b, c) { return a + b + c; }
             return sum.apply(null, [1, 2, 3]);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6));
     }
 
@@ -3546,12 +4296,16 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // apply() with this and arguments
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function multiply(x) { return this.factor * x; }
             function Obj() { this.factor = 5; }
             var obj = new Obj();
             return multiply.apply(obj, [7]);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(35));
     }
 
@@ -3560,13 +4314,17 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // bind() creates a bound function object
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function getVal() { return this.val; }
             function Obj() { this.val = 99; }
             var obj = new Obj();
             var bound = getVal.bind(obj);
             return typeof bound;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         // bind returns an object (our implementation stores bound function data in an object)
         assert!(result.is_string());
     }
@@ -3579,12 +4337,16 @@ mod tests {
     fn test_array_map() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             function double(x) { return x * 2; }
             var mapped = arr.map(double);
             return mapped[0] + mapped[1] + mapped[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(12)); // 2 + 4 + 6
     }
 
@@ -3592,12 +4354,16 @@ mod tests {
     fn test_array_filter() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             function isEven(x) { return x % 2 == 0; }
             var filtered = arr.filter(isEven);
             return filtered.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(2)); // [2, 4]
     }
 
@@ -3607,14 +4373,18 @@ mod tests {
 
         // forEach just calls the callback, returns undefined
         // Test that it iterates over all elements using an object to accumulate
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             function Counter() { this.sum = 0; }
             var counter = new Counter();
             function addToCounter(x) { counter.sum = counter.sum + x; }
             arr.forEach(addToCounter);
             return counter.sum;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6));
     }
 
@@ -3622,11 +4392,15 @@ mod tests {
     fn test_array_reduce() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4];
             function add(acc, x) { return acc + x; }
             return arr.reduce(add, 0);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10));
     }
 
@@ -3634,11 +4408,15 @@ mod tests {
     fn test_array_reduce_no_initial() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4];
             function add(acc, x) { return acc + x; }
             return arr.reduce(add);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(10));
     }
 
@@ -3646,11 +4424,15 @@ mod tests {
     fn test_array_find() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             function isGreaterThan3(x) { return x > 3; }
             return arr.find(isGreaterThan3);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(4));
     }
 
@@ -3658,11 +4440,15 @@ mod tests {
     fn test_array_find_index() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             function isGreaterThan3(x) { return x > 3; }
             return arr.findIndex(isGreaterThan3);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3670,11 +4456,15 @@ mod tests {
     fn test_array_some() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             function isGreaterThan3(x) { return x > 3; }
             return arr.some(isGreaterThan3) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3682,11 +4472,15 @@ mod tests {
     fn test_array_every() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [2, 4, 6, 8];
             function isEven(x) { return x % 2 == 0; }
             return arr.every(isEven) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3694,11 +4488,15 @@ mod tests {
     fn test_array_every_false() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [2, 4, 5, 8];
             function isEven(x) { return x % 2 == 0; }
             return arr.every(isEven) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -3706,10 +4504,14 @@ mod tests {
     fn test_array_includes() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             return arr.includes(3) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3717,10 +4519,14 @@ mod tests {
     fn test_array_includes_not_found() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             return arr.includes(10) ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -3728,12 +4534,16 @@ mod tests {
     fn test_array_concat() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr1 = [1, 2, 3];
             var arr2 = [4, 5, 6];
             var result = arr1.concat(arr2);
             return result.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6));
     }
 
@@ -3741,12 +4551,16 @@ mod tests {
     fn test_array_concat_values() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr1 = [1, 2, 3];
             var arr2 = [4, 5, 6];
             var result = arr1.concat(arr2);
             return result[3] + result[4] + result[5];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(15)); // 4 + 5 + 6
     }
 
@@ -3754,11 +4568,15 @@ mod tests {
     fn test_array_concat_single_value() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             var result = arr.concat(4);
             return result.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(4));
     }
 
@@ -3766,11 +4584,15 @@ mod tests {
     fn test_array_sort() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [3, 1, 4, 1, 5, 9, 2, 6];
             arr.sort();
             return arr[0];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3778,11 +4600,15 @@ mod tests {
     fn test_array_sort_returns_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [3, 1, 2];
             var sorted = arr.sort();
             return sorted[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3790,11 +4616,15 @@ mod tests {
     fn test_array_flat() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, [2, 3], 4];
             var flat = arr.flat();
             return flat.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(4));
     }
 
@@ -3802,11 +4632,15 @@ mod tests {
     fn test_array_fill() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             arr.fill(0);
             return arr[0] + arr[1] + arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0));
     }
 
@@ -3814,11 +4648,15 @@ mod tests {
     fn test_array_fill_range() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4, 5];
             arr.fill(0, 1, 4);
             return arr[0] + arr[1] + arr[4];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6)); // 1 + 0 + 5
     }
 
@@ -3826,10 +4664,14 @@ mod tests {
     fn test_string_char_code_at() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = 'ABC';
             return s.charCodeAt(0);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(65)); // 'A' = 65
     }
 
@@ -3837,10 +4679,14 @@ mod tests {
     fn test_string_last_index_of() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = 'hello hello';
             return s.lastIndexOf('hello');
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(6));
     }
 
@@ -3848,10 +4694,14 @@ mod tests {
     fn test_string_from_char_code() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var s = String.fromCharCode(65, 66, 67);
             return s.length;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3859,10 +4709,14 @@ mod tests {
     fn test_array_last_index_of() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 2, 1];
             return arr.lastIndexOf(2);
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(3));
     }
 
@@ -3871,10 +4725,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Just verify it returns a number and doesn't throw
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var t = performance.now();
             return t >= 0 ? 1 : 0;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(1));
     }
 
@@ -3882,13 +4740,17 @@ mod tests {
     fn test_uint8_clamped_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Uint8ClampedArray(3);
             arr[0] = -10;   // clamped to 0
             arr[1] = 300;   // clamped to 255
             arr[2] = 100;   // stays 100
             return arr[0] + arr[1] + arr[2];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(0 + 255 + 100)); // 355
     }
 
@@ -3896,12 +4758,16 @@ mod tests {
     fn test_float32_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Float32Array(2);
             arr[0] = 3;
             arr[1] = 4;
             return arr[0] + arr[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(7));
     }
 
@@ -3909,12 +4775,16 @@ mod tests {
     fn test_float64_array() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = new Float64Array(2);
             arr[0] = 10;
             arr[1] = 20;
             return arr[0] + arr[1];
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert_eq!(result.to_i32(), Some(30));
     }
 
@@ -3922,10 +4792,14 @@ mod tests {
     fn test_eval_error() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new EvalError('bad eval');
             return e.name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3933,10 +4807,14 @@ mod tests {
     fn test_uri_error() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new URIError('bad uri');
             return e.name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3944,10 +4822,14 @@ mod tests {
     fn test_internal_error() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new InternalError('too much recursion');
             return e.name;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3955,10 +4837,14 @@ mod tests {
     fn test_error_stack_property() {
         let mut ctx = Context::new(64 * 1024);
 
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new Error('test');
             return typeof e.stack;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3967,10 +4853,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check that toString method exists on Error
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var e = new Error('test message');
             return typeof e.toString;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3979,10 +4869,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check that toString method exists
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3];
             return typeof arr.toString;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -3991,10 +4885,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check that toString method exists
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             function foo() { return 1; }
             return typeof foo.toString;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -4003,10 +4901,14 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // Check that reduceRight method exists
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             var arr = [1, 2, 3, 4];
             return typeof arr.reduceRight;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -4015,9 +4917,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // gc() should be a function and return undefined
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return typeof gc;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -4026,9 +4932,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // load() should be a function
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return typeof load;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -4037,9 +4947,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // setTimeout should be a function
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return typeof setTimeout;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
 
@@ -4048,10 +4962,13 @@ mod tests {
         let mut ctx = Context::new(64 * 1024);
 
         // clearTimeout should be a function
-        let result = ctx.eval("
+        let result = ctx
+            .eval(
+                "
             return typeof clearTimeout;
-        ").unwrap();
+        ",
+            )
+            .unwrap();
         assert!(result.is_string());
     }
-
 }

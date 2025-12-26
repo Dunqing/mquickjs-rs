@@ -202,10 +202,7 @@ impl<'a> Compiler<'a> {
         }
         self.panic_mode = true;
         self.had_error = true;
-        eprintln!(
-            "[line {}] Error: {}",
-            self.current_pos.line, message
-        );
+        eprintln!("[line {}] Error: {}", self.current_pos.line, message);
     }
 
     /// Check if current token is an assignment operator
@@ -602,11 +599,7 @@ impl<'a> Compiler<'a> {
 
         let name = match &self.current_token {
             Token::Ident(s) => s.clone(),
-            _ => {
-                return Err(CompileError::SyntaxError(
-                    "Expected variable name".into(),
-                ))
-            }
+            _ => return Err(CompileError::SyntaxError("Expected variable name".into())),
         };
         self.advance();
 
@@ -646,11 +639,7 @@ impl<'a> Compiler<'a> {
 
         let name = match &self.current_token {
             Token::Ident(s) => s.clone(),
-            _ => {
-                return Err(CompileError::SyntaxError(
-                    "Expected variable name".into(),
-                ))
-            }
+            _ => return Err(CompileError::SyntaxError("Expected variable name".into())),
         };
         self.advance();
 
@@ -675,11 +664,7 @@ impl<'a> Compiler<'a> {
         // Get function name
         let name = match &self.current_token {
             Token::Ident(s) => s.clone(),
-            _ => {
-                return Err(CompileError::SyntaxError(
-                    "Expected function name".into(),
-                ))
-            }
+            _ => return Err(CompileError::SyntaxError("Expected function name".into())),
         };
         self.advance();
 
@@ -696,9 +681,7 @@ impl<'a> Compiler<'a> {
                     params.push(param_name.clone());
                     self.advance();
                 } else {
-                    return Err(CompileError::SyntaxError(
-                        "Expected parameter name".into(),
-                    ));
+                    return Err(CompileError::SyntaxError("Expected parameter name".into()));
                 }
 
                 if !self.match_token(&Token::Comma) {
@@ -1221,9 +1204,7 @@ impl<'a> Compiler<'a> {
 
         // Expect '{'
         if !self.check(&Token::LBrace) {
-            return Err(CompileError::SyntaxError(
-                "Expected '{' after 'try'".into(),
-            ));
+            return Err(CompileError::SyntaxError("Expected '{' after 'try'".into()));
         }
 
         // Emit Catch opcode with placeholder offset
@@ -1259,7 +1240,7 @@ impl<'a> Compiler<'a> {
                     _ => {
                         return Err(CompileError::SyntaxError(
                             "Expected catch variable name".into(),
-                        ))
+                        ));
                     }
                 };
                 self.advance();
@@ -1277,9 +1258,7 @@ impl<'a> Compiler<'a> {
 
                 // Parse catch body
                 if !self.check(&Token::LBrace) {
-                    return Err(CompileError::SyntaxError(
-                        "Expected '{' after catch".into(),
-                    ));
+                    return Err(CompileError::SyntaxError("Expected '{' after catch".into()));
                 }
                 self.block_statement()?;
 
@@ -1290,9 +1269,7 @@ impl<'a> Compiler<'a> {
 
                 // Parse catch body
                 if !self.check(&Token::LBrace) {
-                    return Err(CompileError::SyntaxError(
-                        "Expected '{' after catch".into(),
-                    ));
+                    return Err(CompileError::SyntaxError("Expected '{' after catch".into()));
                 }
                 self.block_statement()?;
             }
@@ -1432,7 +1409,10 @@ impl<'a> Compiler<'a> {
                     self.emit_op(OpCode::PushEmptyString);
                 } else {
                     // Check for built-in strings used by typeof
-                    use crate::value::{STR_UNDEFINED, STR_OBJECT, STR_BOOLEAN, STR_NUMBER, STR_FUNCTION, STR_STRING};
+                    use crate::value::{
+                        STR_BOOLEAN, STR_FUNCTION, STR_NUMBER, STR_OBJECT, STR_STRING,
+                        STR_UNDEFINED,
+                    };
                     let builtin_idx = match s.as_str() {
                         "undefined" => Some(STR_UNDEFINED),
                         "object" => Some(STR_OBJECT),
@@ -1744,15 +1724,12 @@ impl<'a> Compiler<'a> {
                             self.emit_u16(str_idx);
                         }
                     } else {
-                        return Err(CompileError::SyntaxError(
-                            "Expected property name".into(),
-                        ));
+                        return Err(CompileError::SyntaxError("Expected property name".into()));
                     }
                 }
 
                 // Post-increment/decrement handled here for simple variables
                 // (more complex cases would need special handling)
-
                 _ => break,
             }
         }
@@ -1804,9 +1781,7 @@ impl<'a> Compiler<'a> {
                         self.emit_op(OpCode::GetField);
                         self.emit_u16(str_idx);
                     } else {
-                        return Err(CompileError::SyntaxError(
-                            "Expected property name".into(),
-                        ));
+                        return Err(CompileError::SyntaxError("Expected property name".into()));
                     }
                 }
                 Token::LBracket => {
@@ -1982,9 +1957,7 @@ impl<'a> Compiler<'a> {
             Token::Amp => Some((BitwiseAnd, Left)),
 
             // Equality
-            Token::EqEq | Token::BangEq | Token::EqEqEq | Token::BangEqEq => {
-                Some((Equality, Left))
-            }
+            Token::EqEq | Token::BangEq | Token::EqEqEq | Token::BangEqEq => Some((Equality, Left)),
 
             // Relational
             Token::Lt | Token::LtEq | Token::Gt | Token::GtEq | Token::InstanceOf | Token::In => {
@@ -2087,7 +2060,7 @@ impl<'a> Compiler<'a> {
                 return Err(CompileError::SyntaxError(format!(
                     "Unknown binary operator: {:?}",
                     op
-                )))
+                )));
             }
         }
         Ok(())
@@ -2326,9 +2299,7 @@ mod tests {
         let source = "var x = 10; x;";
         let func = Compiler::new(source).compile().unwrap();
         // Check that GetLoc0 is emitted for x
-        assert!(func
-            .bytecode
-            .contains(&(OpCode::GetLoc0 as u8)));
+        assert!(func.bytecode.contains(&(OpCode::GetLoc0 as u8)));
     }
 
     #[test]
@@ -2336,9 +2307,7 @@ mod tests {
         let source = "var x = 1; if (x) { x; }";
         let func = Compiler::new(source).compile().unwrap();
         // Should contain IfFalse jump
-        assert!(func
-            .bytecode
-            .contains(&(OpCode::IfFalse as u8)));
+        assert!(func.bytecode.contains(&(OpCode::IfFalse as u8)));
     }
 
     #[test]
@@ -2346,9 +2315,7 @@ mod tests {
         let source = "var i = 0; while (i < 5) { i; }";
         let func = Compiler::new(source).compile().unwrap();
         // Should contain IfFalse and Goto
-        assert!(func
-            .bytecode
-            .contains(&(OpCode::IfFalse as u8)));
+        assert!(func.bytecode.contains(&(OpCode::IfFalse as u8)));
         assert!(func.bytecode.contains(&(OpCode::Goto as u8)));
     }
 
@@ -2356,9 +2323,7 @@ mod tests {
     fn test_compile_ternary() {
         let func = compile_expr("1 ? 2 : 3").unwrap();
         // Should contain IfFalse and Goto for branches
-        assert!(func
-            .bytecode
-            .contains(&(OpCode::IfFalse as u8)));
+        assert!(func.bytecode.contains(&(OpCode::IfFalse as u8)));
         assert!(func.bytecode.contains(&(OpCode::Goto as u8)));
     }
 }

@@ -75,11 +75,7 @@ pub fn unicode_from_utf8(buf: &[u8]) -> Option<(u32, usize)> {
 
     let cp = match len {
         2 => ((b0 & 0x1F) as u32) << 6 | (buf[1] & 0x3F) as u32,
-        3 => {
-            ((b0 & 0x0F) as u32) << 12
-                | ((buf[1] & 0x3F) as u32) << 6
-                | (buf[2] & 0x3F) as u32
-        }
+        3 => ((b0 & 0x0F) as u32) << 12 | ((buf[1] & 0x3F) as u32) << 6 | (buf[2] & 0x3F) as u32,
         4 => {
             ((b0 & 0x07) as u32) << 18
                 | ((buf[1] & 0x3F) as u32) << 12
@@ -164,7 +160,10 @@ mod tests {
         assert_eq!(unicode_from_utf8(b"A"), Some((0x41, 1)));
         assert_eq!(unicode_from_utf8(&[0xC3, 0xA9]), Some((0x00E9, 2)));
         assert_eq!(unicode_from_utf8(&[0xE4, 0xB8, 0xAD]), Some((0x4E2D, 3)));
-        assert_eq!(unicode_from_utf8(&[0xF0, 0x9F, 0x98, 0x80]), Some((0x1F600, 4)));
+        assert_eq!(
+            unicode_from_utf8(&[0xF0, 0x9F, 0x98, 0x80]),
+            Some((0x1F600, 4))
+        );
 
         // Invalid sequences
         assert_eq!(unicode_from_utf8(&[0x80]), None); // Invalid start

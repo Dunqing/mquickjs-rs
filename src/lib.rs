@@ -22,8 +22,8 @@
 #![allow(dead_code)] // During development
 
 // Core modules
-pub mod value;
 pub mod context;
+pub mod value;
 
 // Garbage collector
 pub mod gc;

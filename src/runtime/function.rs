@@ -322,7 +322,8 @@ impl FunctionBytecode {
             if *pos + 4 > data.len() {
                 return Err("unexpected end of data".to_string());
             }
-            let val = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+            let val =
+                u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
             *pos += 4;
             Ok(val)
         };
@@ -347,8 +348,14 @@ impl FunctionBytecode {
                 return Err("unexpected end of data".to_string());
             }
             let val = u64::from_le_bytes([
-                data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3],
-                data[*pos + 4], data[*pos + 5], data[*pos + 6], data[*pos + 7],
+                data[*pos],
+                data[*pos + 1],
+                data[*pos + 2],
+                data[*pos + 3],
+                data[*pos + 4],
+                data[*pos + 5],
+                data[*pos + 6],
+                data[*pos + 7],
             ]);
             *pos += 8;
             Ok(val)
@@ -451,23 +458,29 @@ impl FunctionBytecode {
         for _ in 0..cap_count {
             let outer_index = read_u32(&mut pos)? as usize;
             let is_local = read_u8(&mut pos)? != 0;
-            captures.push(CaptureInfo { outer_index, is_local });
+            captures.push(CaptureInfo {
+                outer_index,
+                is_local,
+            });
         }
 
-        Ok((FunctionBytecode {
-            name,
-            arg_count,
-            local_count,
-            stack_size,
-            has_arguments,
-            bytecode,
-            constants,
-            string_constants,
-            source_file,
-            line_numbers,
-            inner_functions,
-            captures,
-        }, pos))
+        Ok((
+            FunctionBytecode {
+                name,
+                arg_count,
+                local_count,
+                stack_size,
+                has_arguments,
+                bytecode,
+                constants,
+                string_constants,
+                source_file,
+                line_numbers,
+                inner_functions,
+                captures,
+            },
+            pos,
+        ))
     }
 }
 
@@ -528,7 +541,10 @@ mod tests {
     #[test]
     fn test_closure() {
         let bytecode = Value::null(); // Placeholder
-        let var_refs = vec![VarRef::detached(Value::int(1)), VarRef::detached(Value::int(2))];
+        let var_refs = vec![
+            VarRef::detached(Value::int(1)),
+            VarRef::detached(Value::int(2)),
+        ];
 
         let closure = Closure::with_var_refs(bytecode, var_refs);
         assert_eq!(closure.var_refs.len(), 2);

@@ -12,8 +12,8 @@
 //!   --memory-limit N   Limit memory usage to N bytes (supports k/K, m/M suffixes)
 
 use mquickjs::Context;
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
 /// Command line options
 struct Options {
@@ -332,7 +332,8 @@ fn compile_to_bytecode(script_path: &str) -> Result<(), String> {
 
     // Compile
     let ctx = Context::new(1024 * 1024);
-    let bytecode = ctx.compile(&source)
+    let bytecode = ctx
+        .compile(&source)
         .map_err(|e| format!("Compile error: {}", e))?;
 
     // Serialize
@@ -352,7 +353,12 @@ fn compile_to_bytecode(script_path: &str) -> Result<(), String> {
     std::fs::write(&output_path, &output)
         .map_err(|e| format!("Error writing {}: {}", output_path, e))?;
 
-    println!("Compiled {} -> {} ({} bytes)", script_path, output_path, output.len());
+    println!(
+        "Compiled {} -> {} ({} bytes)",
+        script_path,
+        output_path,
+        output.len()
+    );
     Ok(())
 }
 
@@ -361,8 +367,7 @@ fn run_bytecode_file(ctx: &mut Context, filename: &str) -> Result<(), String> {
     use mquickjs::FunctionBytecode;
 
     // Read bytecode file
-    let data = std::fs::read(filename)
-        .map_err(|e| format!("Error reading {}: {}", filename, e))?;
+    let data = std::fs::read(filename).map_err(|e| format!("Error reading {}: {}", filename, e))?;
 
     // Verify magic and version
     if data.len() < 5 {

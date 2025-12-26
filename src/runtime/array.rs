@@ -335,7 +335,9 @@ impl JSArray {
         }
 
         let start = from_index.min(self.len - 1);
-        (0..=start).rev().find(|&i| self.elements[i as usize] == value)
+        (0..=start)
+            .rev()
+            .find(|&i| self.elements[i as usize] == value)
     }
 
     /// Check if array includes a value

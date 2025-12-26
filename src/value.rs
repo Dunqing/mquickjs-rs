@@ -226,7 +226,10 @@ impl Value {
     pub const fn int(val: i32) -> Self {
         // Check if value fits in 31 bits (will panic in const context if not)
         // Range: -2^30 to 2^30 - 1
-        assert!(val >= -(1 << 30) && val < (1 << 30), "Integer out of 31-bit range");
+        assert!(
+            val >= -(1 << 30) && val < (1 << 30),
+            "Integer out of 31-bit range"
+        );
         Value(RawValue::from_i32(val))
     }
 
@@ -255,19 +258,28 @@ impl Value {
     /// This is for temporary use during compilation
     #[inline]
     pub const fn func(idx: u16) -> Self {
-        Value(RawValue::make_special(SpecialTag::ShortFunc as u8, idx as i32))
+        Value(RawValue::make_special(
+            SpecialTag::ShortFunc as u8,
+            idx as i32,
+        ))
     }
 
     /// Create a string value (index into string constants)
     #[inline]
     pub const fn string(idx: u16) -> Self {
-        Value(RawValue::make_special(SpecialTag::StringChar as u8, idx as i32))
+        Value(RawValue::make_special(
+            SpecialTag::StringChar as u8,
+            idx as i32,
+        ))
     }
 
     /// Create a closure value (index into interpreter's closures array)
     #[inline]
     pub const fn closure_idx(idx: u32) -> Self {
-        Value(RawValue::make_special(SpecialTag::CatchOffset as u8, idx as i32))
+        Value(RawValue::make_special(
+            SpecialTag::CatchOffset as u8,
+            idx as i32,
+        ))
     }
 
     /// Create an array value (index into interpreter's arrays)

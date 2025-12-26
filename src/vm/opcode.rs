@@ -376,7 +376,12 @@ pub struct OpCodeInfo {
 
 impl OpCodeInfo {
     const fn new(size: u8, n_pop: u8, n_push: u8, format: OpFormat) -> Self {
-        OpCodeInfo { size, n_pop, n_push, format }
+        OpCodeInfo {
+            size,
+            n_pop,
+            n_push,
+            format,
+        }
     }
 }
 

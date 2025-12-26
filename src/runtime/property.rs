@@ -232,9 +232,7 @@ impl PropertyTable {
 
     /// Iterate over all properties
     pub fn iter(&self) -> impl Iterator<Item = &Property> {
-        self.properties
-            .iter()
-            .filter(|p| !p.key.is_uninitialized())
+        self.properties.iter().filter(|p| !p.key.is_uninitialized())
     }
 
     /// Iterate over all property keys

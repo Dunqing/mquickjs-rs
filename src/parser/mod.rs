@@ -2,9 +2,9 @@
 //!
 //! Single-pass parser that generates bytecode directly.
 
-pub mod lexer;
 pub mod compiler;
+pub mod lexer;
 
 // Re-exports
-pub use lexer::{Lexer, Token};
 pub use compiler::Compiler;
+pub use lexer::{Lexer, Token};

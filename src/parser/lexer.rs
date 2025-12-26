@@ -17,32 +17,32 @@ pub enum Token {
     Star,
     Slash,
     Percent,
-    StarStar,  // **
-    PlusPlus,  // ++
+    StarStar,   // **
+    PlusPlus,   // ++
     MinusMinus, // --
 
-    Eq,        // =
-    EqEq,      // ==
-    EqEqEq,    // ===
-    Bang,      // !
-    BangEq,    // !=
-    BangEqEq,  // !==
+    Eq,       // =
+    EqEq,     // ==
+    EqEqEq,   // ===
+    Bang,     // !
+    BangEq,   // !=
+    BangEqEq, // !==
 
-    Lt,        // <
-    LtEq,      // <=
-    Gt,        // >
-    GtEq,      // >=
+    Lt,   // <
+    LtEq, // <=
+    Gt,   // >
+    GtEq, // >=
 
-    LtLt,      // <<
-    GtGt,      // >>
-    GtGtGt,    // >>>
+    LtLt,   // <<
+    GtGt,   // >>
+    GtGtGt, // >>>
 
-    Amp,       // &
-    AmpAmp,    // &&
-    Pipe,      // |
-    PipePipe,  // ||
-    Caret,     // ^
-    Tilde,     // ~
+    Amp,      // &
+    AmpAmp,   // &&
+    Pipe,     // |
+    PipePipe, // ||
+    Caret,    // ^
+    Tilde,    // ~
 
     Question,  // ?
     Colon,     // :
@@ -50,12 +50,12 @@ pub enum Token {
     Comma,     // ,
     Dot,       // .
 
-    LParen,    // (
-    RParen,    // )
-    LBracket,  // [
-    RBracket,  // ]
-    LBrace,    // {
-    RBrace,    // }
+    LParen,   // (
+    RParen,   // )
+    LBracket, // [
+    RBracket, // ]
+    LBrace,   // {
+    RBrace,   // }
 
     // Compound assignment
     PlusEq,
@@ -231,15 +231,27 @@ impl<'a> Lexer<'a> {
         self.advance();
         match c {
             b'+' => match self.peek() {
-                Some(b'+') => { self.advance(); Token::PlusPlus }
-                Some(b'=') => { self.advance(); Token::PlusEq }
-                _ => Token::Plus
-            }
+                Some(b'+') => {
+                    self.advance();
+                    Token::PlusPlus
+                }
+                Some(b'=') => {
+                    self.advance();
+                    Token::PlusEq
+                }
+                _ => Token::Plus,
+            },
             b'-' => match self.peek() {
-                Some(b'-') => { self.advance(); Token::MinusMinus }
-                Some(b'=') => { self.advance(); Token::MinusEq }
-                _ => Token::Minus
-            }
+                Some(b'-') => {
+                    self.advance();
+                    Token::MinusMinus
+                }
+                Some(b'=') => {
+                    self.advance();
+                    Token::MinusEq
+                }
+                _ => Token::Minus,
+            },
             b'*' => match self.peek() {
                 Some(b'*') => {
                     self.advance();
@@ -250,17 +262,26 @@ impl<'a> Lexer<'a> {
                         Token::StarStar
                     }
                 }
-                Some(b'=') => { self.advance(); Token::StarEq }
-                _ => Token::Star
-            }
+                Some(b'=') => {
+                    self.advance();
+                    Token::StarEq
+                }
+                _ => Token::Star,
+            },
             b'/' => match self.peek() {
-                Some(b'=') => { self.advance(); Token::SlashEq }
-                _ => Token::Slash
-            }
+                Some(b'=') => {
+                    self.advance();
+                    Token::SlashEq
+                }
+                _ => Token::Slash,
+            },
             b'%' => match self.peek() {
-                Some(b'=') => { self.advance(); Token::PercentEq }
-                _ => Token::Percent
-            }
+                Some(b'=') => {
+                    self.advance();
+                    Token::PercentEq
+                }
+                _ => Token::Percent,
+            },
             b'=' => match self.peek() {
                 Some(b'=') => {
                     self.advance();
@@ -271,8 +292,8 @@ impl<'a> Lexer<'a> {
                         Token::EqEq
                     }
                 }
-                _ => Token::Eq
-            }
+                _ => Token::Eq,
+            },
             b'!' => match self.peek() {
                 Some(b'=') => {
                     self.advance();
@@ -283,8 +304,8 @@ impl<'a> Lexer<'a> {
                         Token::BangEq
                     }
                 }
-                _ => Token::Bang
-            }
+                _ => Token::Bang,
+            },
             b'<' => match self.peek() {
                 Some(b'<') => {
                     self.advance();
@@ -295,9 +316,12 @@ impl<'a> Lexer<'a> {
                         Token::LtLt
                     }
                 }
-                Some(b'=') => { self.advance(); Token::LtEq }
-                _ => Token::Lt
-            }
+                Some(b'=') => {
+                    self.advance();
+                    Token::LtEq
+                }
+                _ => Token::Lt,
+            },
             b'>' => match self.peek() {
                 Some(b'>') => {
                     self.advance();
@@ -311,27 +335,48 @@ impl<'a> Lexer<'a> {
                                 Token::GtGtGt
                             }
                         }
-                        Some(b'=') => { self.advance(); Token::GtGtEq }
-                        _ => Token::GtGt
+                        Some(b'=') => {
+                            self.advance();
+                            Token::GtGtEq
+                        }
+                        _ => Token::GtGt,
                     }
                 }
-                Some(b'=') => { self.advance(); Token::GtEq }
-                _ => Token::Gt
-            }
+                Some(b'=') => {
+                    self.advance();
+                    Token::GtEq
+                }
+                _ => Token::Gt,
+            },
             b'&' => match self.peek() {
-                Some(b'&') => { self.advance(); Token::AmpAmp }
-                Some(b'=') => { self.advance(); Token::AmpEq }
-                _ => Token::Amp
-            }
+                Some(b'&') => {
+                    self.advance();
+                    Token::AmpAmp
+                }
+                Some(b'=') => {
+                    self.advance();
+                    Token::AmpEq
+                }
+                _ => Token::Amp,
+            },
             b'|' => match self.peek() {
-                Some(b'|') => { self.advance(); Token::PipePipe }
-                Some(b'=') => { self.advance(); Token::PipeEq }
-                _ => Token::Pipe
-            }
+                Some(b'|') => {
+                    self.advance();
+                    Token::PipePipe
+                }
+                Some(b'=') => {
+                    self.advance();
+                    Token::PipeEq
+                }
+                _ => Token::Pipe,
+            },
             b'^' => match self.peek() {
-                Some(b'=') => { self.advance(); Token::CaretEq }
-                _ => Token::Caret
-            }
+                Some(b'=') => {
+                    self.advance();
+                    Token::CaretEq
+                }
+                _ => Token::Caret,
+            },
             b'~' => Token::Tilde,
             b'?' => Token::Question,
             b':' => Token::Colon,
@@ -344,7 +389,7 @@ impl<'a> Lexer<'a> {
             b']' => Token::RBracket,
             b'{' => Token::LBrace,
             b'}' => Token::RBrace,
-            _ => Token::Error(format!("Unexpected character: {}", c as char))
+            _ => Token::Error(format!("Unexpected character: {}", c as char)),
         }
     }
 
@@ -398,7 +443,7 @@ impl<'a> Lexer<'a> {
             "var" => Token::Var,
             "void" => Token::Void,
             "while" => Token::While,
-            _ => Token::Ident(ident)
+            _ => Token::Ident(ident),
         }
     }
 
@@ -445,7 +490,7 @@ impl<'a> Lexer<'a> {
         let num_str = std::str::from_utf8(&self.source[start..self.pos]).unwrap_or("0");
         match num_str.parse::<f64>() {
             Ok(n) => Token::Number(n),
-            Err(_) => Token::Error(format!("Invalid number: {}", num_str))
+            Err(_) => Token::Error(format!("Invalid number: {}", num_str)),
         }
     }
 
