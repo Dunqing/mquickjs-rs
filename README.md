@@ -1,6 +1,6 @@
 # MQuickJS-RS
 
-A Rust port of [MQuickJS](https://bellard.org/quickjs/) - Fabrice Bellard's minimalist JavaScript engine designed for embedded systems.
+A Rust port of [MQuickJS](https://github.com/bellard/mquickjs) - Fabrice Bellard's minimalist JavaScript engine designed for embedded systems.
 
 ## Features
 
@@ -205,20 +205,21 @@ cargo test -- --nocapture
 
 Currently **373 tests** covering all implemented features.
 
-## Differences from QuickJS
+## MQuickJS vs QuickJS
 
-MQuickJS (and this Rust port) is a **minimalist subset** of QuickJS:
+[MQuickJS](https://github.com/bellard/mquickjs) is Fabrice Bellard's **minimalist** JavaScript engine, distinct from his full-featured [QuickJS](https://bellard.org/quickjs/). MQuickJS-RS is a Rust port of MQuickJS.
 
-| Feature | QuickJS | MQuickJS-RS |
-|---------|---------|-------------|
-| ES version | ES2020+ | ES5 subset |
-| Reference counting | Yes | No (tracing GC) |
+| Feature | QuickJS | MQuickJS / MQuickJS-RS |
+|---------|---------|------------------------|
+| ES version | ES2020+ | ES5 subset ("stricter mode") |
+| Memory model | Reference counting | Tracing GC (mark-compact) |
 | Generators | Yes | No |
 | Async/await | Yes | No |
-| Modules | Yes | No |
+| ES Modules | Yes | No |
 | BigInt | Yes | No |
 | Proxies | Yes | No |
-| Size | ~200KB | ~10KB RAM capable |
+| Target size | ~200KB binary | ~10KB RAM capable |
+| Use case | General purpose | Embedded systems |
 
 ## Learning Resources
 
