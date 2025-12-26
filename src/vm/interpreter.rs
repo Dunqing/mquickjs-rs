@@ -6696,7 +6696,7 @@ fn native_object_has_own_property(interp: &mut Interpreter, this: Value, args: &
 }
 
 /// Object.getPrototypeOf - get the prototype of an object
-fn native_object_get_prototype_of(interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
+fn native_object_get_prototype_of(_interp: &mut Interpreter, _this: Value, args: &[Value]) -> Result<Value, String> {
     let obj = args.first().copied().unwrap_or(Value::undefined());
 
     // For our simple implementation, most objects don't have explicit prototypes

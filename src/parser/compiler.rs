@@ -1916,7 +1916,7 @@ impl<'a> Compiler<'a> {
     /// Parse array literal elements: expr, expr, ... ]
     /// Called after the opening '[' has been consumed
     fn array_literal(&mut self) -> Result<u16, CompileError> {
-        let mut count = 0;
+        let mut count: u32 = 0;
 
         if !self.check(&Token::RBracket) {
             loop {
@@ -1939,7 +1939,7 @@ impl<'a> Compiler<'a> {
         }
 
         self.expect(Token::RBracket)?;
-        Ok(count)
+        Ok(count as u16)
     }
 
     /// Get precedence and associativity of current infix operator

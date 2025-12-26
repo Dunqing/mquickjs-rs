@@ -144,7 +144,7 @@ const STACK_SLACK: usize = 16;
 impl Heap {
     /// Create a new heap with the given total size
     pub fn new(total_size: usize) -> Self {
-        let mut buffer = vec![0u8; total_size];
+        let buffer = vec![0u8; total_size];
 
         // Ensure alignment
         let _align_offset = buffer.as_ptr().align_offset(WORD_SIZE);

@@ -8,7 +8,7 @@
 //! compared to reference counting.
 
 use super::allocator::{BlockHeader, Heap, MemoryTag};
-use crate::value::{Value, WORD_SIZE};
+use crate::value::Value;
 use std::marker::PhantomData;
 
 /// A GC-safe reference to a value
@@ -69,7 +69,7 @@ pub fn collect(heap: &mut Heap) {
 
 /// Clear all mark bits
 fn clear_marks(heap: &mut Heap) {
-    for (ptr, header) in heap.iter_blocks() {
+    for (ptr, _header) in heap.iter_blocks() {
         unsafe {
             let header_mut = heap.get_header(ptr);
             header_mut.set_marked(false);
