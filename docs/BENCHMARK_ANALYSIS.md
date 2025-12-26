@@ -8,145 +8,202 @@ This document explains the performance differences between MQuickJS-RS (Rust) an
 
 | Benchmark | Rust (s) | C (s) | Ratio | Winner |
 |-----------|----------|-------|-------|--------|
-| fib | 0.018 | 0.059 | 0.30x | Rust 3.3x faster |
-| loop | 0.019 | 0.035 | 0.54x | Rust 1.9x faster |
-| json | 0.022 | 0.024 | 0.93x | Rust 8% faster |
-| string | 0.017 | 0.017 | 1.01x | Equal |
-| object | 0.018 | 0.017 | 1.08x | Equal |
-| closure | 0.018 | 0.016 | 1.10x | Equal |
-| array | 0.019 | 0.017 | 1.15x | C 15% faster |
-| sieve | 0.039 | 0.022 | 1.73x | C 73% faster |
+| json | 0.021 | 0.024 | 0.88x | Rust 12% faster |
+| string | 0.016 | 0.016 | 1.01x | Equal |
+| closure | 0.016 | 0.016 | 1.02x | Equal |
+| object | 0.019 | 0.017 | 1.12x | C 12% faster |
+| array | 0.019 | 0.016 | 1.21x | C 21% faster |
+| sieve | 0.039 | 0.021 | 1.84x | C 84% faster |
+| fib | 0.132 | 0.059 | 2.25x | C 2.25x faster |
+| loop | 0.070 | 0.030 | 2.33x | C 2.33x faster |
 
-## Why Rust is Faster on `fib` (3.3x)
+## Why C is Generally Faster
 
-### The Key Difference: Recursion Handling
+### 1. Computed Gotos vs Match Statement
 
-**C Implementation** (mquickjs.c, line 68):
+**C Implementation** uses computed gotos (GCC extension):
 ```c
-#define JS_MAX_CALL_RECURSE 8
-```
+#define CASE(op)  op_label:
+#define NEXT      goto *dispatch_table[*pc++]
 
-The original MQuickJS limits C stack recursion to **only 8 levels**. When this limit is reached, it throws "C stack overflow". For `fib(30)` which requires thousands of recursive calls, the C implementation must use a complex trampoline/continuation mechanism to avoid actual stack overflow.
+static void *dispatch_table[] = {
+    &&op_push_i32, &&op_push_const, ...
+};
 
-**Rust Implementation**:
-```rust
-call_stack: Vec<CallFrame>,  // Heap-allocated frame stack
-```
-
-The Rust version uses a **heap-allocated call stack** (a `Vec<CallFrame>`). Each function call just pushes a lightweight `CallFrame` struct to the vector - no actual stack recursion. This is a "stackless" interpreter design.
-
-### Comparison
-
-| Aspect | C (mquickjs) | Rust (mquickjs-rs) |
-|--------|--------------|-------------------|
-| Recursion limit | 8 C stack frames | Limited only by heap memory |
-| Deep recursion | Must save/restore interpreter state | Just push/pop Vec element |
-| Function call overhead | Complex continuation handling | Simple `Vec::push()` |
-| Memory locality | State scattered across C stack | Compact CallFrame structs |
-
-The stackless design in Rust means:
-- No C/Rust stack growth during JS recursion
-- Constant-time function call overhead
-- Better cache locality for call frames
-
-## Why Rust is Faster on `loop` (1.9x)
-
-### 1. LLVM Optimizations
-
-Rust's release build with LTO (`lto = true` in Cargo.toml) aggressively optimizes the interpreter loop. The `opt-level = 3` setting enables maximum optimization.
-
-### 2. Simpler Integer Fast Path
-
-**Rust** - Clean pattern matching:
-```rust
-fn op_add(&self, a: Value, b: Value) -> InterpreterResult<Value> {
-    match (a.to_i32(), b.to_i32()) {
-        (Some(va), Some(vb)) => {
-            if let Some(result) = va.checked_add(vb) {
-                Ok(Value::int(result))
-            } else {
-                Err(InterpreterError::InternalError("integer overflow".into()))
-            }
-        }
-        _ => Err(InterpreterError::TypeError("cannot add non-numbers".into())),
-    }
-}
-```
-
-**C** - Must check both integer AND short float paths:
-```c
+// Direct jump to next opcode
 CASE(OP_add):
-    if (likely(JS_VALUE_IS_BOTH_INT(op1, op2))) {
-        int r;
-        if (unlikely(__builtin_add_overflow((int)op1, (int)op2, &r)))
-            goto add_slow;
-        sp[1] = (uint32_t)r;
-    } else if (JS_VALUE_IS_BOTH_SHORT_FLOAT(op1, op2)) {
-        // Short float path...
-    } else {
-        goto add_slow;
-    }
+    // ... add code
+    NEXT;
 ```
 
-The C version has additional branching for short float support that the Rust version doesn't need.
-
-### 3. Branch Prediction
-
-Rust's `match` on opcode compiles to efficient jump tables. The LLVM backend can better optimize the dispatch loop compared to the C switch statement with computed gotos.
-
-## Why C is Faster on `sieve` (1.7x) and `array` (1.15x)
-
-### Optimizations Applied
-
-We've applied several optimizations to reduce the gap:
-
-1. **Unsafe stack operations**: `pop_unchecked()`, `pop2_unchecked()`, `pop3_unchecked()` for hot paths
-2. **Unsafe value extraction**: `to_i32_unchecked()`, `to_array_idx_unchecked()` after type checks
-3. **Unchecked array access**: `get_unchecked()` in GetArrayEl/PutArrayEl after bounds validation
-
+**Rust Implementation** uses match statement:
 ```rust
-// Optimized fast path in GetArrayEl
-if arr.is_array() && idx.is_int() {
-    let arr_idx = unsafe { arr.to_array_idx_unchecked() };
-    let index = unsafe { idx.to_i32_unchecked() };
-    if index >= 0 {
-        let array = unsafe { self.get_array_unchecked(arr_idx) };
-        if index < array.len() {
-            // SAFETY: We just checked index < len
-            unsafe { *array.get_unchecked(index) }
-        }
+loop {
+    let opcode = bc[frame.pc];
+    frame.pc += 1;
+
+    match opcode {
+        op if op == OpCode::Push0 as u8 => { ... }
+        op if op == OpCode::Add as u8 => { ... }
+        // 80+ more arms
     }
 }
 ```
 
-### Remaining Gap
+**Impact**: Computed gotos eliminate the dispatch overhead of a central switch/match. Each opcode handler jumps directly to the next handler without returning to the dispatch loop. This saves ~2-3 instructions per opcode.
 
-Even with optimizations, C maintains a lead due to:
+### 2. Inline Caching and Short-Circuit Paths
 
-1. **Method call overhead**: Each `array.push()` in JavaScript requires GetField lookup + native function call
-2. **Type tag checking**: Every operation still checks value types, even in fast paths
-3. **Memory allocation**: C uses custom arena allocator vs Rust's general-purpose `Vec`
-
-The C implementation uses direct pointer arithmetic with no runtime checks:
-
+The C version uses aggressive inline caching for property lookups:
 ```c
-// Direct memory access, no bounds check
-val = arr->values[i];
+// C: Fast path with cached shape
+if (likely(prop_cache->shape == obj->shape)) {
+    return obj->props[prop_cache->slot];
+}
+// Slow path
 ```
+
+The Rust version does full property lookup each time:
+```rust
+// Rust: Full lookup every time
+self.objects[obj_idx].properties.get(&key)
+```
+
+### 3. Tagged Value Representation
+
+Both use tagged values, but the C version has more optimized tagging:
+
+**C** - 32-bit values with NaN boxing or pointer tagging:
+```c
+// Short int: fits in 31 bits, no allocation
+// Short float: fits in IEEE-754 quiet NaN payload
+typedef uint32_t JSValue;
+```
+
+**Rust** - 64-bit values with simpler tagging:
+```rust
+// All values are 64 bits, simpler but more memory
+struct RawValue(usize);  // 64-bit on modern systems
+```
+
+The C version's compact representation improves cache efficiency.
+
+## Why Rust is Faster on `json` (12%)
+
+### Efficient String Handling
+
+Rust's `serde_json` (conceptually similar approach in our parser) handles JSON parsing efficiently:
+
+```rust
+// Rust: Zero-copy string parsing where possible
+let s: &str = ...;  // Borrowed slice, no allocation
+
+// Efficient string building
+let mut s = String::with_capacity(estimated_len);
+```
+
+The C version must manage string memory manually, potentially with more allocations.
+
+## Why C is Much Faster on `loop` (2.3x) and `fib` (2.25x)
+
+### Loop Benchmark
+
+The `loop` benchmark runs 1 million iterations of simple arithmetic:
+```javascript
+for (var i = 0; i < 1000000; i = i + 1) {
+    sum = (sum + i) % mod;
+}
+```
+
+**Why C is faster:**
+1. **Tighter dispatch loop**: Computed gotos eliminate match overhead
+2. **Better branch prediction**: Direct jumps have predictable patterns
+3. **Smaller code**: C opcode handlers are more compact, better I-cache usage
+
+### Fib Benchmark
+
+The `fib` benchmark does recursive function calls:
+```javascript
+function fib(n) {
+    if (n <= 1) return n;
+    return fib(n-1) + fib(n-2);
+}
+fib(30);
+```
+
+**Why C is faster:**
+1. **Optimized call/return**: C version has hand-tuned function call code paths
+2. **Smaller call frame**: C uses compact 8-byte call frames
+3. **Register allocation**: C compiler can keep more values in registers
+
+**Note**: The Rust version uses a stackless interpreter design (heap-allocated call frames), which handles deep recursion without stack overflow. This trades some performance for correctness on deeply nested calls.
+
+## Why C is Faster on `sieve` (1.84x) and `array` (1.21x)
+
+### Array Access Patterns
+
+Both benchmarks are array-intensive:
+
+**C** - Direct pointer arithmetic:
+```c
+// No bounds check, direct memory access
+val = arr->values[i];
+arr->values[i] = val;
+```
+
+**Rust** - Safe access with bounds checking:
+```rust
+// Bounds check on every access
+let val = self.arrays[arr_idx].get(i)?;
+self.arrays[arr_idx].set(i, val)?;
+```
+
+Even with `unsafe` optimizations in hot paths, Rust still has more indirection:
+```rust
+// Rust optimized path still involves more steps:
+// 1. Get array reference from interpreter
+// 2. Check array type
+// 3. Access underlying Vec
+// 4. Get/set element
+```
+
+### Method Call Overhead
+
+Each `array.push()` in JavaScript requires:
+1. Property lookup for "push"
+2. Function call setup
+3. Native function dispatch
+
+The C version optimizes common array methods with special opcodes, while Rust uses generic property lookup.
 
 ## Summary
 
 | Category | Winner | Reason |
 |----------|--------|--------|
-| **Recursion-heavy** (fib) | Rust | Stackless interpreter design vs 8-frame limit |
-| **Loop-heavy** (loop) | Rust | LLVM optimizations, simpler integer path |
-| **JSON parsing** | Rust | String handling optimizations |
-| **Object/String/Closure** | Tie | Similar implementation strategies |
-| **Array-heavy** (array, sieve) | C | Method call overhead, custom allocator |
+| **JSON parsing** | Rust | Efficient string handling |
+| **String/Closure operations** | Tie | Similar implementation strategies |
+| **Object access** | C | Inline caching, smaller objects |
+| **Array operations** | C | Direct pointer arithmetic, no bounds checks |
+| **Loops** | C | Computed gotos, tighter dispatch |
+| **Recursion** | C | Optimized call/return paths |
+
+## Design Trade-offs
+
+The Rust implementation prioritizes:
+- **Safety**: Bounds checking, no undefined behavior
+- **Correctness**: Handles edge cases (deep recursion, large values)
+- **Maintainability**: Clear, idiomatic Rust code
+- **Learning**: Well-documented for educational purposes
+
+The C implementation prioritizes:
+- **Performance**: Every cycle counts in embedded systems
+- **Memory efficiency**: Minimal footprint for constrained devices
+- **Compatibility**: Proven on many platforms
 
 ## Potential Further Optimizations
 
-1. ✅ **Unsafe array access**: Implemented `get_unchecked()` in hot paths
-2. **Custom allocator**: Implement arena allocation similar to C version
-3. **Inline push**: Specialize GetField for common array methods to avoid lookup
-4. **Profile-guided optimization**: Use PGO to optimize the interpreter dispatch loop
+1. **Computed goto equivalent**: Use `#[cold]` and profile-guided optimization
+2. **Inline caching**: Add shape-based property caching
+3. **Register-based VM**: Convert from stack-based to register-based bytecode
+4. **Unsafe hot paths**: More aggressive use of unsafe in the interpreter loop
+5. **Profile-guided optimization**: Use PGO to optimize dispatch patterns

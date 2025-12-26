@@ -3319,21 +3319,7 @@ impl Interpreter {
 
     fn op_add(&self, a: Value, b: Value) -> InterpreterResult<Value> {
         match (a.to_i32(), b.to_i32()) {
-            (Some(va), Some(vb)) => {
-                if let Some(result) = va.checked_add(vb) {
-                    if crate::value::fits_in_short_int(result) {
-                        Ok(Value::int(result))
-                    } else {
-                        Err(InterpreterError::InternalError(
-                            "integer overflow".to_string(),
-                        ))
-                    }
-                } else {
-                    Err(InterpreterError::InternalError(
-                        "integer overflow".to_string(),
-                    ))
-                }
-            }
+            (Some(va), Some(vb)) => Ok(Value::int(va.wrapping_add(vb))),
             _ => Err(InterpreterError::TypeError(
                 "cannot add non-numbers".to_string(),
             )),
@@ -3342,21 +3328,7 @@ impl Interpreter {
 
     fn op_sub(&self, a: Value, b: Value) -> InterpreterResult<Value> {
         match (a.to_i32(), b.to_i32()) {
-            (Some(va), Some(vb)) => {
-                if let Some(result) = va.checked_sub(vb) {
-                    if crate::value::fits_in_short_int(result) {
-                        Ok(Value::int(result))
-                    } else {
-                        Err(InterpreterError::InternalError(
-                            "integer overflow".to_string(),
-                        ))
-                    }
-                } else {
-                    Err(InterpreterError::InternalError(
-                        "integer overflow".to_string(),
-                    ))
-                }
-            }
+            (Some(va), Some(vb)) => Ok(Value::int(va.wrapping_sub(vb))),
             _ => Err(InterpreterError::TypeError(
                 "cannot subtract non-numbers".to_string(),
             )),
@@ -3365,21 +3337,7 @@ impl Interpreter {
 
     fn op_mul(&self, a: Value, b: Value) -> InterpreterResult<Value> {
         match (a.to_i32(), b.to_i32()) {
-            (Some(va), Some(vb)) => {
-                if let Some(result) = va.checked_mul(vb) {
-                    if crate::value::fits_in_short_int(result) {
-                        Ok(Value::int(result))
-                    } else {
-                        Err(InterpreterError::InternalError(
-                            "integer overflow".to_string(),
-                        ))
-                    }
-                } else {
-                    Err(InterpreterError::InternalError(
-                        "integer overflow".to_string(),
-                    ))
-                }
-            }
+            (Some(va), Some(vb)) => Ok(Value::int(va.wrapping_mul(vb))),
             _ => Err(InterpreterError::TypeError(
                 "cannot multiply non-numbers".to_string(),
             )),

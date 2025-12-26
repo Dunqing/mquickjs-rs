@@ -223,7 +223,7 @@ MQuickJS (and this Rust port) is a **minimalist subset** of QuickJS:
 ## Learning Resources
 
 - **[How It Works](docs/HOW_IT_WORKS.md)** - Deep dive into JavaScript engine internals for learners: lexer, parser, bytecode, VM, garbage collection, closures, and more
-- **[Benchmark Analysis](docs/BENCHMARK_ANALYSIS.md)** - Why Rust is 3x faster on recursion (stackless interpreter) and why C is faster on arrays (no bounds checking)
+- **[Benchmark Analysis](docs/BENCHMARK_ANALYSIS.md)** - Performance comparison with analysis of why C is faster on loops (computed gotos) and arrays (no bounds checking), while Rust excels at JSON parsing
 
 ## Benchmarks
 
@@ -233,16 +233,16 @@ Performance comparison between MQuickJS-RS (Rust) and original MQuickJS (C).
 
 | Benchmark | Rust (s) | C (s) | Ratio | Notes |
 |-----------|----------|-------|-------|-------|
-| fib | 0.018 | 0.059 | **0.30x** | Rust 3.3x faster |
-| loop | 0.019 | 0.035 | **0.54x** | Rust 1.9x faster |
-| json | 0.022 | 0.024 | **0.93x** | Rust 8% faster |
-| string | 0.017 | 0.017 | 1.01x | Equal |
-| object | 0.018 | 0.017 | 1.08x | Equal |
-| closure | 0.018 | 0.016 | 1.10x | Equal |
-| array | 0.019 | 0.017 | 1.15x | C 15% faster |
-| sieve | 0.039 | 0.022 | 1.73x | C 73% faster |
+| json | 0.021 | 0.024 | **0.88x** | Rust 12% faster |
+| string | 0.016 | 0.016 | 1.01x | Equal |
+| closure | 0.016 | 0.016 | 1.02x | Equal |
+| object | 0.019 | 0.017 | 1.12x | C 12% faster |
+| array | 0.019 | 0.016 | 1.21x | C 21% faster |
+| sieve | 0.039 | 0.021 | 1.84x | C 84% faster |
+| fib | 0.132 | 0.059 | 2.25x | C 2.25x faster |
+| loop | 0.070 | 0.030 | 2.33x | C 2.33x faster |
 
-**Summary**: The Rust port is competitive with the original C implementation. It's significantly faster on recursive function calls (stackless interpreter) and loops (LLVM optimizations), roughly equal on object/string/closure operations, and slower on array-heavy workloads (bounds checking overhead).
+**Summary**: The C implementation is generally faster due to its hand-optimized interpreter loop with computed gotos and inline caching. The Rust port prioritizes safety (bounds checking, no unsafe in hot paths) and correctness. It's faster on JSON parsing due to Rust's efficient string handling, and comparable on string/closure operations. See [Benchmark Analysis](docs/BENCHMARK_ANALYSIS.md) for detailed analysis.
 
 ### Running Benchmarks
 

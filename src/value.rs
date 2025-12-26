@@ -221,15 +221,12 @@ impl Value {
         }
     }
 
-    /// Create an integer value (31-bit signed)
+    /// Create an integer value
+    ///
+    /// On 64-bit systems, the full i32 range is supported.
+    /// The encoding shifts the value left by 1 bit, which fits in a 64-bit usize.
     #[inline]
     pub const fn int(val: i32) -> Self {
-        // Check if value fits in 31 bits (will panic in const context if not)
-        // Range: -2^30 to 2^30 - 1
-        assert!(
-            val >= -(1 << 30) && val < (1 << 30),
-            "Integer out of 31-bit range"
-        );
         Value(RawValue::from_i32(val))
     }
 
