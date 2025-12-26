@@ -117,12 +117,12 @@
 **Goal**: Usable command-line tool
 
 - [x] 8.1 Implement CLI skeleton
-- [x] 8.2 Implement argument parsing (-h, -e, -i, -I, -d, --memory-limit)
-- [ ] 8.3 Implement line editing (optional)
-- [ ] 8.4 Implement bytecode serialization (optional)
+- [x] 8.2 Implement argument parsing (-h, -e, -i, -I, -d, -c, --memory-limit)
+- [x] 8.3 Implement line editing (rustyline with history)
+- [x] 8.4 Implement bytecode serialization (.qbc files)
 - [x] 8.5 Implement memory stats (dump_memory_stats, MemoryStats struct)
 
-**Status**: Complete (core features)
+**Status**: Complete
 
 ---
 
@@ -188,12 +188,15 @@
 - clearTimeout(id) - cancel a scheduled timeout
 
 **Stage 8 CLI Features**:
-- Complete argument parsing (-h, -e, -i, -I, -d, --memory-limit)
+- Complete argument parsing (-h, -e, -i, -I, -d, -c, --memory-limit)
 - Memory limit supports k/K, m/M suffixes (e.g., --memory-limit 512k)
 - Memory stats display (heap size, used, runtime strings, arrays, objects, closures, etc.)
 - Include file support (-I file)
 - Interactive mode (-i) after script execution
-- REPL with prompt and EOF handling
+- REPL with rustyline (line editing, history, Ctrl+C/D support)
+- Command history saved to ~/.mqjs_history
+- Bytecode compilation (-c flag, outputs .qbc file)
+- Bytecode execution (automatically loads .qbc files)
 
 **Stage 4 Compiler Features**:
 - Precedence climbing expression parser

@@ -45,4 +45,5 @@ pub mod util;
 
 // Re-export main types
 pub use context::{Context, MemoryStats};
+pub use runtime::FunctionBytecode;
 pub use value::Value;

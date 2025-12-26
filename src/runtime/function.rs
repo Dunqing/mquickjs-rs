@@ -242,6 +242,233 @@ impl FunctionBytecode {
         // would analyze the bytecode to find max stack depth
         self.stack_size = (self.local_count as u16).saturating_add(16);
     }
+
+    /// Serialize to bytes for bytecode file format
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+
+        // Function name
+        if let Some(ref name) = self.name {
+            out.extend_from_slice(&(name.len() as u32).to_le_bytes());
+            out.extend_from_slice(name.as_bytes());
+        } else {
+            out.extend_from_slice(&0u32.to_le_bytes());
+        }
+
+        // Function metadata
+        out.extend_from_slice(&self.arg_count.to_le_bytes());
+        out.extend_from_slice(&self.local_count.to_le_bytes());
+        out.extend_from_slice(&self.stack_size.to_le_bytes());
+        out.push(self.has_arguments as u8);
+
+        // Bytecode
+        out.extend_from_slice(&(self.bytecode.len() as u32).to_le_bytes());
+        out.extend_from_slice(&self.bytecode);
+
+        // Constants (only serialize integers and special values for now)
+        out.extend_from_slice(&(self.constants.len() as u32).to_le_bytes());
+        for val in &self.constants {
+            // Serialize the raw value
+            let raw = val.0.0 as u64;
+            out.extend_from_slice(&raw.to_le_bytes());
+        }
+
+        // String constants
+        out.extend_from_slice(&(self.string_constants.len() as u32).to_le_bytes());
+        for s in &self.string_constants {
+            out.extend_from_slice(&(s.len() as u32).to_le_bytes());
+            out.extend_from_slice(s.as_bytes());
+        }
+
+        // Source file (optional)
+        if let Some(ref file) = self.source_file {
+            out.extend_from_slice(&(file.len() as u32).to_le_bytes());
+            out.extend_from_slice(file.as_bytes());
+        } else {
+            out.extend_from_slice(&0u32.to_le_bytes());
+        }
+
+        // Line numbers
+        out.extend_from_slice(&(self.line_numbers.len() as u32).to_le_bytes());
+        for &(pc, line) in &self.line_numbers {
+            out.extend_from_slice(&pc.to_le_bytes());
+            out.extend_from_slice(&line.to_le_bytes());
+        }
+
+        // Inner functions (recursive)
+        out.extend_from_slice(&(self.inner_functions.len() as u32).to_le_bytes());
+        for func in &self.inner_functions {
+            let func_bytes = func.serialize();
+            out.extend_from_slice(&(func_bytes.len() as u32).to_le_bytes());
+            out.extend_from_slice(&func_bytes);
+        }
+
+        // Captures
+        out.extend_from_slice(&(self.captures.len() as u32).to_le_bytes());
+        for cap in &self.captures {
+            out.extend_from_slice(&(cap.outer_index as u32).to_le_bytes());
+            out.push(cap.is_local as u8);
+        }
+
+        out
+    }
+
+    /// Deserialize from bytes
+    pub fn deserialize(data: &[u8]) -> Result<(Self, usize), String> {
+        let mut pos = 0;
+
+        // Helper to read bytes
+        let read_u32 = |pos: &mut usize| -> Result<u32, String> {
+            if *pos + 4 > data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let val = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+            *pos += 4;
+            Ok(val)
+        };
+        let read_u16 = |pos: &mut usize| -> Result<u16, String> {
+            if *pos + 2 > data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let val = u16::from_le_bytes([data[*pos], data[*pos + 1]]);
+            *pos += 2;
+            Ok(val)
+        };
+        let read_u8 = |pos: &mut usize| -> Result<u8, String> {
+            if *pos >= data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let val = data[*pos];
+            *pos += 1;
+            Ok(val)
+        };
+        let read_u64 = |pos: &mut usize| -> Result<u64, String> {
+            if *pos + 8 > data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let val = u64::from_le_bytes([
+                data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3],
+                data[*pos + 4], data[*pos + 5], data[*pos + 6], data[*pos + 7],
+            ]);
+            *pos += 8;
+            Ok(val)
+        };
+        let read_string = |pos: &mut usize| -> Result<String, String> {
+            let len = read_u32(pos)? as usize;
+            if *pos + len > data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let s = String::from_utf8(data[*pos..*pos + len].to_vec())
+                .map_err(|e| format!("invalid utf-8: {}", e))?;
+            *pos += len;
+            Ok(s)
+        };
+
+        // Function name
+        let name_len = read_u32(&mut pos)? as usize;
+        let name = if name_len > 0 {
+            if pos + name_len > data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let s = String::from_utf8(data[pos..pos + name_len].to_vec())
+                .map_err(|e| format!("invalid utf-8: {}", e))?;
+            pos += name_len;
+            Some(s)
+        } else {
+            None
+        };
+
+        // Function metadata
+        let arg_count = read_u16(&mut pos)?;
+        let local_count = read_u16(&mut pos)?;
+        let stack_size = read_u16(&mut pos)?;
+        let has_arguments = read_u8(&mut pos)? != 0;
+
+        // Bytecode
+        let bytecode_len = read_u32(&mut pos)? as usize;
+        if pos + bytecode_len > data.len() {
+            return Err("unexpected end of data".to_string());
+        }
+        let bytecode = data[pos..pos + bytecode_len].to_vec();
+        pos += bytecode_len;
+
+        // Constants
+        let const_count = read_u32(&mut pos)? as usize;
+        let mut constants = Vec::with_capacity(const_count);
+        for _ in 0..const_count {
+            let raw = read_u64(&mut pos)? as usize;
+            constants.push(Value(crate::value::RawValue(raw)));
+        }
+
+        // String constants
+        let str_count = read_u32(&mut pos)? as usize;
+        let mut string_constants = Vec::with_capacity(str_count);
+        for _ in 0..str_count {
+            string_constants.push(read_string(&mut pos)?);
+        }
+
+        // Source file
+        let source_file = {
+            let len = read_u32(&mut pos)? as usize;
+            if len > 0 {
+                if pos + len > data.len() {
+                    return Err("unexpected end of data".to_string());
+                }
+                let s = String::from_utf8(data[pos..pos + len].to_vec())
+                    .map_err(|e| format!("invalid utf-8: {}", e))?;
+                pos += len;
+                Some(s)
+            } else {
+                None
+            }
+        };
+
+        // Line numbers
+        let line_count = read_u32(&mut pos)? as usize;
+        let mut line_numbers = Vec::with_capacity(line_count);
+        for _ in 0..line_count {
+            let pc = read_u32(&mut pos)?;
+            let line = read_u32(&mut pos)?;
+            line_numbers.push((pc, line));
+        }
+
+        // Inner functions
+        let inner_count = read_u32(&mut pos)? as usize;
+        let mut inner_functions = Vec::with_capacity(inner_count);
+        for _ in 0..inner_count {
+            let func_len = read_u32(&mut pos)? as usize;
+            if pos + func_len > data.len() {
+                return Err("unexpected end of data".to_string());
+            }
+            let (func, _) = Self::deserialize(&data[pos..pos + func_len])?;
+            inner_functions.push(func);
+            pos += func_len;
+        }
+
+        // Captures
+        let cap_count = read_u32(&mut pos)? as usize;
+        let mut captures = Vec::with_capacity(cap_count);
+        for _ in 0..cap_count {
+            let outer_index = read_u32(&mut pos)? as usize;
+            let is_local = read_u8(&mut pos)? != 0;
+            captures.push(CaptureInfo { outer_index, is_local });
+        }
+
+        Ok((FunctionBytecode {
+            name,
+            arg_count,
+            local_count,
+            stack_size,
+            has_arguments,
+            bytecode,
+            constants,
+            string_constants,
+            source_file,
+            line_numbers,
+            inner_functions,
+            captures,
+        }, pos))
+    }
 }
 
 /// Function kind

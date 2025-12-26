@@ -19,6 +19,7 @@ path = "src/bin/mqjs.rs"
 
 [dependencies]
 regex = "1"
+rustyline = "14"
 
 [dev-dependencies]
 
