@@ -2,6 +2,8 @@
 
 A Rust port of [MQuickJS](https://github.com/bellard/mquickjs) - Fabrice Bellard's minimalist JavaScript engine designed for embedded systems.
 
+> **Note**: This is a **learning project** created for educational purposes. It demonstrates how JavaScript engines work internally (lexer, parser, bytecode compiler, virtual machine, garbage collector). Not intended for production use.
+
 ## Features
 
 - **Minimal footprint**: Can run JavaScript with as low as 10KB of RAM
